@@ -26,6 +26,11 @@ from urllib3.util.retry import Retry
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Simple in-memory caches to avoid redundant discovery work per target
+TECH_FP_CACHE = {}
+ENDPOINT_DISCOVERY_CACHE = {}
+SUBDOMAIN_CACHE = {}
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s %(message)s",
@@ -352,6 +357,8 @@ def analyze_js_endpoints(target_url):
 
 
 def enumerate_subdomains(target_url):
+    if target_url in SUBDOMAIN_CACHE:
+        return SUBDOMAIN_CACHE[target_url]
     prefixes = ["api", "dev", "staging", "test", "beta"]
     discovered = []
     hostname = urllib.parse.urlparse(target_url).hostname or target_url
@@ -364,10 +371,14 @@ def enumerate_subdomains(target_url):
                     discovered.append(variant)
             except Exception:
                 continue
-    return list(set(discovered))
+    unique = list(set(discovered))
+    SUBDOMAIN_CACHE[target_url] = unique
+    return unique
 
 
 def tech_fingerprint(target_url):
+    if target_url in TECH_FP_CACHE:
+        return TECH_FP_CACHE[target_url]
     try:
         resp = requests.get(target_url, timeout=4, verify=False)
         text = resp.text.lower()
@@ -378,18 +389,24 @@ def tech_fingerprint(target_url):
                 fingerprints.append(marker)
         if fingerprints:
             log_event(logging.INFO, "Tech fingerprint", target=target_url, markers=",".join(sorted(set(fingerprints))))
+        TECH_FP_CACHE[target_url] = fingerprints
         return fingerprints
     except Exception:
+        TECH_FP_CACHE[target_url] = []
         return []
 
 
 def discover_endpoints(target_url):
+    if target_url in ENDPOINT_DISCOVERY_CACHE:
+        return ENDPOINT_DISCOVERY_CACHE[target_url]
     endpoints = set(ENDPOINTS + CVE_ENDPOINTS)
     for url in parse_sitemap(target_url):
         endpoints.add(urllib.parse.urlparse(url).path)
     for js_path in analyze_js_endpoints(target_url):
         endpoints.add(js_path)
-    return list(endpoints)
+    resolved = list(endpoints)
+    ENDPOINT_DISCOVERY_CACHE[target_url] = resolved
+    return resolved
 
 
 def prioritize_endpoints(endpoints, fingerprints):
