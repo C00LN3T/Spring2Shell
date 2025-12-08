@@ -1,6 +1,7 @@
 # React4Shell
 ULTIMATE REACT4SHELL EXPLOITATION FRAMEWORK CVE-2025-55182 &amp; CVE-2025-66478 Ready
 
+#
 usage: cracker.py [-h] {scan,exploit,direct,cve-scan,menu} ...
 
 Ultimate React4Shell Scanner with CVE-2025-55182 & CVE-2025-66478 Exploitation
