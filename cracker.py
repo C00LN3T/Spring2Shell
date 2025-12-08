@@ -1669,25 +1669,46 @@ def load_report_and_exploit(report_file):
     except Exception as e:
         print(f"[!] Error loading report: {str(e)}")
 
-def mass_cve_scan(input_file, output_file="cve_results.txt"):
+def mass_cve_scan(input_file, output_file="cve_results.txt", threads=None):
     """
-    Mass CVE scanning across multiple targets
+    Mass CVE scanning across multiple targets with multithreading support
     """
     try:
         with open(input_file, 'r') as f:
             targets = [line.strip() for line in f if line.strip()]
-        
-        print(f"\n[+] Starting mass CVE scan on {len(targets)} targets")
-        
+
+        if not targets:
+            print("[!] No targets provided for CVE scan")
+            return
+
+        default_workers = max(2, min(os.cpu_count() or 4, 16))
+        max_workers = threads if threads else default_workers
+        max_workers = min(max_workers, len(targets))
+
+        print(f"\n[+] Starting mass CVE scan on {len(targets)} targets using {max_workers} threads")
+
+        scan_results = []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_target = {executor.submit(cve_specific_scan, target): target for target in targets}
+
+            for completed, future in enumerate(concurrent.futures.as_completed(future_to_target), start=1):
+                target = future_to_target[future]
+                try:
+                    result = future.result()
+                except Exception as e:
+                    print(f"[!] Error scanning {target}: {e}")
+                    result = None
+
+                scan_results.append((target, result))
+                print(f"[{completed}/{len(targets)}] Finished scanning {target}")
+
         with open(output_file, 'w') as out_f:
             out_f.write("CVE Scan Results\n")
             out_f.write(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             out_f.write("="*50 + "\n")
-            
-            for target in targets:
-                print(f"\n[+] Scanning: {target}")
-                results = cve_specific_scan(target)
-                
+
+            for target, results in scan_results:
                 if results:
                     out_f.write(f"\nTarget: {target}\n")
                     for result in results:
@@ -1696,13 +1717,13 @@ def mass_cve_scan(input_file, output_file="cve_results.txt"):
                     out_f.write("\n")
                 else:
                     out_f.write(f"\nTarget: {target} - No CVE vulnerabilities found\n")
-        
+
         print(f"\n[+] Results saved to {output_file}")
-        
+
     except Exception as e:
         print(f"[!] Error: {e}")
 
-def main_scan_mode(input_file, output_prefix):
+def main_scan_mode(input_file, output_prefix, threads=None):
     """Main scanning function"""
     global interrupted
     
@@ -1715,6 +1736,11 @@ def main_scan_mode(input_file, output_prefix):
         sys.exit(1)
     
     print(f"[*] Ultimate React4Shell Scanner Started")
+    # Use thread pool with configurable worker count
+    default_workers = max(2, min(os.cpu_count() or 4, 16))
+    max_workers = threads if threads else default_workers
+    max_workers = min(max_workers, len(urls)) if urls else 1
+
     print(f"[*] Targets: {len(urls)}")
     print(f"[*] CVE-2025-55182 & CVE-2025-66478 Support: Enabled")
     print(f"[*] WAF Bypass Techniques: Enabled")
@@ -1722,14 +1748,12 @@ def main_scan_mode(input_file, output_prefix):
     print(f"[*] Payload Variations: {len(PAYLOADS)}")
     print(f"[*] Endpoints to test: {len(ENDPOINTS) + len(CVE_ENDPOINTS)}")
     print(f"[*] Stealth Mode: Random delays enabled")
+    print(f"[*] Thread workers: {max_workers}")
     print(f"[*] Press Ctrl+C to stop and save partial results")
     print("-" * 50)
-    
+
     results = []
     scanned = 0
-    
-    # Use thread pool with random worker count (2-4)
-    max_workers = random.randint(2, 4)
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {}
@@ -1835,8 +1859,10 @@ def main_menu():
         if choice == '1':
             input_file = input("Enter path to targets file: ").strip()
             output_prefix = input("Enter output prefix (e.g., 'scan_results'): ").strip()
+            threads_input = input("Threads to use (press enter for auto): ").strip()
+            threads = int(threads_input) if threads_input.isdigit() and int(threads_input) > 0 else None
             if input_file and output_prefix:
-                main_scan_mode(input_file, output_prefix)
+                main_scan_mode(input_file, output_prefix, threads=threads)
             else:
                 print("[!] Invalid input")
         
@@ -2081,9 +2107,11 @@ def main_menu():
         elif choice == '10':
             input_file = input("Enter path to targets file: ").strip()
             output_file = input("Enter output file for results (default: cve_results.txt): ").strip() or "cve_results.txt"
-            
+            threads_input = input("Threads to use (press enter for auto): ").strip()
+            threads = int(threads_input) if threads_input.isdigit() and int(threads_input) > 0 else None
+
             if input_file:
-                mass_cve_scan(input_file, output_file)
+                mass_cve_scan(input_file, output_file, threads=threads)
         
         elif choice == '11':
             target_url = input("Enter target URL to scan: ").strip()
@@ -2156,6 +2184,7 @@ Examples:
     scan_parser = subparsers.add_parser('scan', help='Scan targets for vulnerabilities')
     scan_parser.add_argument('input_file', help='File containing URLs to scan')
     scan_parser.add_argument('output_prefix', help='Output prefix for report files')
+    scan_parser.add_argument('-t', '--threads', type=int, help='Number of threads to use (default: auto)')
     
     # Exploit from report mode
     report_parser = subparsers.add_parser('exploit', help='Load and exploit from existing report')
@@ -2176,6 +2205,7 @@ Examples:
     cve_parser = subparsers.add_parser('cve-scan', help='Mass CVE scanning')
     cve_parser.add_argument('input_file', help='File containing target URLs')
     cve_parser.add_argument('-o', '--output', default='cve_results.txt', help='Output file (default: cve_results.txt)')
+    cve_parser.add_argument('-t', '--threads', type=int, help='Number of threads to use (default: auto)')
     
     # Menu mode
     subparsers.add_parser('menu', help='Start interactive menu')
@@ -2198,7 +2228,7 @@ Examples:
     
     try:
         if args.mode == 'scan':
-            main_scan_mode(args.input_file, args.output_prefix)
+            main_scan_mode(args.input_file, args.output_prefix, threads=args.threads)
         
         elif args.mode == 'exploit':
             load_report_and_exploit(args.report_file)
@@ -2325,7 +2355,7 @@ Examples:
                                 print("[!] Invalid choice")
         
         elif args.mode == 'cve-scan':
-            mass_cve_scan(args.input_file, args.output)
+            mass_cve_scan(args.input_file, args.output, threads=args.threads)
         
         elif args.mode == 'menu':
             main_menu()
