@@ -19,6 +19,8 @@ import argparse
 import readline
 import base64
 import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # COMPLETELY DISABLE ALL SSL WARNINGS
 import urllib3
@@ -292,10 +294,22 @@ def create_stealth_session():
     session = requests.Session()
     session.verify = False  # Disable SSL verification completely
     session.timeout = random.uniform(3, 8)  # Random timeout
-    
+
+    # Persistent connection pooling with retries to improve reliability
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=0.4,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "POST"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=8, pool_maxsize=16)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
     # Disable redirects to avoid detection
     session.max_redirects = 0
-    
+
     return session
 
 def apply_stealth_delay():
@@ -376,6 +390,41 @@ def discover_endpoints(target_url):
     for js_path in analyze_js_endpoints(target_url):
         endpoints.add(js_path)
     return list(endpoints)
+
+
+def prioritize_endpoints(endpoints, fingerprints):
+    """Order endpoints to hit the most promising vectors first based on observed tech."""
+    weights = {
+        "graphql": 8,
+        "api": 6,
+        "actuator": 5,
+        "swagger": 4,
+        "graphiql": 3,
+        "openapi": 3,
+    }
+    tech_bonus = {
+        "next.js": {"/": 10},
+        "react": {"/": 8},
+        "spring": {"actuator": 7, "graphql": 5},
+        "graphql": {"graphql": 9},
+    }
+
+    def score(endpoint):
+        base_score = 1
+        for key, value in weights.items():
+            if key in endpoint.lower():
+                base_score += value
+        for marker in fingerprints:
+            bonus_map = tech_bonus.get(marker, {})
+            for hint, bonus in bonus_map.items():
+                if hint in endpoint.lower():
+                    base_score += bonus
+        return base_score
+
+    prioritized = sorted(set(endpoints), key=lambda ep: score(ep), reverse=True)
+    if fingerprints:
+        log_event(logging.DEBUG, "Endpoint prioritization", markers=",".join(fingerprints), top=prioritized[:3])
+    return prioritized
 
 # ----------------------
 # React2Shell helpers
@@ -775,7 +824,7 @@ def check_react4shell(target_url):
         return []
 
     log_event(logging.INFO, "Fingerprinting target", target=target_url)
-    tech_fingerprint(target_url)
+    fingerprints = tech_fingerprint(target_url)
     discovered_subs = enumerate_subdomains(target_url)
     targets_to_probe = [target_url] + discovered_subs
     react2_results = []
@@ -786,7 +835,7 @@ def check_react4shell(target_url):
     probe_payload = '{"query": "test", "variables": null}'
 
     # Combine all endpoints
-    all_endpoints = list(set(discover_endpoints(target_url)))
+    all_endpoints = prioritize_endpoints(list(set(discover_endpoints(target_url))), fingerprints)
 
     for endpoint in all_endpoints:
         if interrupted:
