@@ -1959,7 +1959,7 @@ def load_report_and_exploit(report_file):
                 if cmd_choice == 'exit':
                     print("[+] Exiting...")
                     sys.exit(0)
-                continue
+                continueReact4Shell
             
             # Execute exploitation
             exploit_vulnerability(
