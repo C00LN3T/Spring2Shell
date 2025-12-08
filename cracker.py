@@ -1746,7 +1746,7 @@ def load_report_and_exploit(report_file):
                 if cmd_choice == 'exit':
                     print("[+] Exiting...")
                     sys.exit(0)
-                continue
+                continueReact4Shell
             
             # Execute exploitation
             exploit_vulnerability(
@@ -1835,8 +1835,7 @@ def main_scan_mode(input_file, output_prefix, threads=None):
         print(f"[!] Could not read file: {input_file}")
         sys.exit(1)
     
-    print(f"[*] Ultimate React4Shell Scanner Started")
-    print(f"[*] React2Shell multipart probes: Enabled")
+    print(f"[*] Ultimate Scanner Started")
     # Use thread pool with configurable worker count
     default_workers = max(2, min(os.cpu_count() or 4, 16))
     max_workers = threads if threads else default_workers
