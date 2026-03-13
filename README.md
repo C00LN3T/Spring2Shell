@@ -27,6 +27,14 @@ Display the built-in help:
 python cracker.py -h
 ```
 
+Global runtime flags:
+```bash
+python cracker.py --insecure direct https://target.example
+python cracker.py --verbose-errors safe-audit https://target.example
+```
+- `--insecure` disables TLS certificate verification (legacy behavior, not recommended for trusted audit results).
+- `--verbose-errors` logs swallowed network exceptions to improve troubleshooting and explainability.
+
 ### Scan a list of targets
 ```bash
 python cracker.py scan targets.txt reports/prefix
@@ -70,5 +78,6 @@ python cracker.py log-audit https://target.example -o log_audit.json
 - Performs passive checks for exposed management endpoints and log4j version indicators to estimate Log2Shell/Log4Shell risk.
 
 ## Notes
-- The tool intentionally disables certificate verification for convenience; use it only in controlled environments.
+- TLS certificate verification is enabled by default. Use `--insecure` only in controlled environments when needed.
+- Use `--verbose-errors` if you need detailed diagnostics for swallowed network exceptions during discovery/audit phases.
 - Commands are for educational and authorized testing purposes. Ensure you have permission before scanning or exploiting any target.

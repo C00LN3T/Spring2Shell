@@ -22,9 +22,30 @@ import logging
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# COMPLETELY DISABLE ALL SSL WARNINGS
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SSL_VERIFY = True
+LOG_EXCEPTIONS = False
+
+
+def configure_runtime_security(insecure=False, verbose_errors=False):
+    """Configure TLS verification and diagnostic verbosity globally."""
+    global SSL_VERIFY, LOG_EXCEPTIONS
+    SSL_VERIFY = not insecure
+    LOG_EXCEPTIONS = verbose_errors
+
+    if insecure:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        log_event(logging.WARNING, "TLS certificate verification is disabled (--insecure)")
+    else:
+        # Keep warnings enabled in secure mode
+        import warnings
+        warnings.filterwarnings('default', category=urllib3.exceptions.InsecureRequestWarning)
+
+
+def log_swallowed_exception(context, exc):
+    if LOG_EXCEPTIONS:
+        log_event(logging.WARNING, f"{context}: {exc}")
 
 # Simple in-memory caches to avoid redundant discovery work per target
 TECH_FP_CACHE = {}
@@ -297,7 +318,7 @@ def protocol_hopper(url):
 def create_stealth_session():
     """Create a session with stealth capabilities"""
     session = requests.Session()
-    session.verify = False  # Disable SSL verification completely
+    session.verify = SSL_VERIFY
     session.timeout = random.uniform(3, 8)  # Random timeout
 
     # Persistent connection pooling with retries to improve reliability
@@ -327,32 +348,32 @@ def apply_stealth_delay():
 def parse_sitemap(target_url):
     urls = []
     try:
-        resp = requests.get(urllib.parse.urljoin(target_url, "/sitemap.xml"), timeout=4, verify=False)
+        resp = requests.get(urllib.parse.urljoin(target_url, "/sitemap.xml"), timeout=4, verify=SSL_VERIFY)
         if resp.status_code == 200 and "<urlset" in resp.text:
             for loc in re.findall(r"<loc>([^<]+)</loc>", resp.text):
                 urls.append(loc.strip())
-    except Exception:
-        pass
+    except Exception as exc:
+        log_swallowed_exception('parse_sitemap failed', exc)
     return urls
 
 
 def analyze_js_endpoints(target_url):
     endpoints = []
     try:
-        resp = requests.get(target_url, timeout=4, verify=False)
+        resp = requests.get(target_url, timeout=4, verify=SSL_VERIFY)
         if resp.status_code == 200:
             script_paths = re.findall(r"<script[^>]+src=\"([^\"]+)\"", resp.text)
             for path in script_paths[:8]:  # limit fetches
                 try:
-                    js_resp = requests.get(urllib.parse.urljoin(target_url, path), timeout=4, verify=False)
+                    js_resp = requests.get(urllib.parse.urljoin(target_url, path), timeout=4, verify=SSL_VERIFY)
                     matches = re.findall(r"fetch\(['\"]([^'\"]+)", js_resp.text)
                     endpoints.extend(matches)
                 except Exception:
                     continue
             inline_calls = re.findall(r"fetch\(['\"]([^'\"]+)", resp.text)
             endpoints.extend(inline_calls)
-    except Exception:
-        pass
+    except Exception as exc:
+        log_swallowed_exception('analyze_js_endpoints failed', exc)
     return list({urllib.parse.urlparse(e).path for e in endpoints if e.startswith(("/", "http"))})
 
 
@@ -366,7 +387,7 @@ def enumerate_subdomains(target_url):
         candidate = f"{prefix}.{hostname}"
         for variant in protocol_hopper(candidate):
             try:
-                resp = requests.head(variant, timeout=2, verify=False, allow_redirects=True)
+                resp = requests.head(variant, timeout=2, verify=SSL_VERIFY, allow_redirects=True)
                 if resp.status_code < 500:
                     discovered.append(variant)
             except Exception:
@@ -380,7 +401,7 @@ def tech_fingerprint(target_url):
     if target_url in TECH_FP_CACHE:
         return TECH_FP_CACHE[target_url]
     try:
-        resp = requests.get(target_url, timeout=4, verify=False)
+        resp = requests.get(target_url, timeout=4, verify=SSL_VERIFY)
         text = resp.text.lower()
         hdrs = {k.lower(): v.lower() for k, v in resp.headers.items()}
         fingerprints = []
@@ -1547,7 +1568,8 @@ def _strict_verify_execution(session, endpoint, method, headers, timeout, payloa
             text = resp.text
             if marker in text and marker not in baseline_text:
                 confirmed += 1
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('_strict_verify_execution request failed', exc)
             continue
 
     return confirmed >= 2
@@ -1740,7 +1762,8 @@ def find_working_endpoint(target_url):
             
             time.sleep(0.3)  # Небольшая задержка
             
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('find_working_endpoint probe failed', exc)
             continue
     
     return working_endpoints
@@ -1814,8 +1837,8 @@ def safe_encoding_audit(target_url, endpoints=None):
                         'reflected_plain': reflected_plain,
                         'reflected_encoded': reflected_encoded,
                     })
-            except Exception:
-                pass
+            except Exception as exc:
+                log_swallowed_exception('safe_encoding_audit POST probe failed', exc)
 
             try:
                 params = {'probe': variant_value, 'audit': 'encoding-check'}
@@ -1832,8 +1855,8 @@ def safe_encoding_audit(target_url, endpoints=None):
                         'reflected_plain': reflected_plain,
                         'reflected_encoded': reflected_encoded,
                     })
-            except Exception:
-                pass
+            except Exception as exc:
+                log_swallowed_exception('safe_encoding_audit GET probe failed', exc)
 
         if endpoint_result['decoding_observations'] or endpoint_result['status']:
             results.append(endpoint_result)
@@ -1898,7 +1921,8 @@ def safe_log_audit(target_url):
         headers = get_random_headers()
         try:
             resp = session.get(url, headers=headers, timeout=timeout)
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('safe_log_audit endpoint probe failed', exc)
             continue
 
         findings['checked_paths'].append({'path': path, 'status_code': resp.status_code})
@@ -1955,7 +1979,8 @@ def safe_dependency_audit(target_url):
         headers = get_random_headers()
         try:
             resp = session.get(url, headers=headers, timeout=timeout)
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('safe_dependency_audit endpoint probe failed', exc)
             continue
         text = resp.text[:200000]
         lower = text.lower()
@@ -1987,8 +2012,8 @@ def safe_misconfig_audit(target_url):
         missing = [r for r in required if r not in h]
         if missing:
             findings['issues'].append({'type': 'missing_security_headers', 'missing': missing})
-    except Exception:
-        pass
+    except Exception as exc:
+        log_swallowed_exception('safe_misconfig_audit root request failed', exc)
 
     mgmt_paths = ['/actuator', '/actuator/env', '/actuator/beans', '/actuator/mappings', '/actuator/configprops']
     for path in mgmt_paths:
@@ -1997,7 +2022,8 @@ def safe_misconfig_audit(target_url):
             resp = session.get(url, headers=headers, timeout=timeout)
             if resp.status_code == 200:
                 findings['issues'].append({'type': 'exposed_management_endpoint', 'path': path})
-        except Exception:
+        except Exception as exc:
+            log_swallowed_exception('safe_misconfig_audit management probe failed', exc)
             continue
 
     print(f"[+] Misconfig audit complete: issues={len(findings['issues'])}")
@@ -2904,8 +2930,12 @@ Examples:
   %(prog)s safe-audit http://target.com -o safe.json    # Save passive audit report
   %(prog)s log-audit http://target.com                  # Safe log risk audit
   %(prog)s log-audit http://target.com -o log.json      # Save safe log audit report
+  %(prog)s --insecure direct http://target.com           # Insecure TLS mode (legacy behavior)
+  %(prog)s --verbose-errors safe-audit http://target.com # Show swallowed network errors
         """
     )
+    parser.add_argument('--insecure', action='store_true', help='Disable TLS certificate verification (not recommended)')
+    parser.add_argument('--verbose-errors', action='store_true', help='Log swallowed network errors for diagnostics')
     
     subparsers = parser.add_subparsers(dest='mode', help='Operation mode')
     
@@ -2958,13 +2988,16 @@ Examples:
     
     # Seed random for better randomness
     random.seed(time.time())
+
+    configure_runtime_security(insecure=args.insecure, verbose_errors=args.verbose_errors)
     
     # Set global timeout
     import socket
     socket.setdefaulttimeout(15)
     
     # Additional safety measures
-    os.environ['PYTHONWARNINGS'] = 'ignore'
+    if args.insecure:
+        os.environ['PYTHONWARNINGS'] = 'ignore'
     
     try:
         if args.mode == 'scan':
