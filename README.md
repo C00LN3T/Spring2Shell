@@ -9,6 +9,10 @@ React2Shell is a Python-based scanner and exploitation toolkit targeting React/S
 - Protocol hopping (HTTP/HTTPS), tech fingerprinting, and subdomain probing to widen coverage.
 - Built-in payload sets for command execution and CVE-specific exploitation attempts.
 - Safe non-exploit audit family: encoding behavior, dependency leakage, misconfiguration, and Log2Shell/Log4Shell risk indicators.
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+- Structured SIEM/CI-ready JSON reporting with confidence, reason codes, and unverified status semantics.
+=======
+>>>>>>> main
 
 ## Requirements
 - Python 3.8+
@@ -52,6 +56,11 @@ python cracker.py exploit reports/prefix.json
 python cracker.py direct https://target.example --test-all
 ```
 - Probes all known endpoints for the target. Add options such as `-e /api/graphql` to focus on one path, `-c "whoami"` to change the command, `--aggressive` to enable stronger WAF bypassing, or `--no-strict-verify` to disable strict replay verification.
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+
+- Findings now use strict statuses (`confirmed`, `unverified`, `not_vulnerable`) with confidence and reason codes in JSON reports.
+=======
+>>>>>>> main
 
 ### CVE-focused mass scan
 ```bash

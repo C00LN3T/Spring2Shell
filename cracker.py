@@ -28,6 +28,46 @@ SSL_VERIFY = True
 LOG_EXCEPTIONS = False
 
 
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+RETRY_PROFILES = {
+    'default': {'total': 3, 'backoff_factor': 0.4, 'pool_connections': 8, 'pool_maxsize': 16},
+    'safe-audit': {'total': 2, 'backoff_factor': 0.2, 'pool_connections': 6, 'pool_maxsize': 12},
+    'aggressive': {'total': 4, 'backoff_factor': 0.5, 'pool_connections': 10, 'pool_maxsize': 20},
+}
+
+TIMEOUT_PROFILES = {
+    'default': 6,
+    'safe-audit': 5,
+    'aggressive': 8,
+}
+
+ERROR_TAXONOMY = {
+    'timeout': 'NET_TIMEOUT',
+    'connection': 'NET_CONNECTION',
+    'ssl': 'NET_TLS',
+    'http': 'HTTP_ERROR',
+    'json': 'PARSE_JSON',
+    'unknown': 'UNKNOWN',
+}
+
+
+def classify_exception(exc):
+    msg = str(exc).lower()
+    if isinstance(exc, requests.exceptions.Timeout) or 'timeout' in msg:
+        return ERROR_TAXONOMY['timeout']
+    if isinstance(exc, requests.exceptions.SSLError) or 'ssl' in msg or 'certificate' in msg:
+        return ERROR_TAXONOMY['ssl']
+    if isinstance(exc, requests.exceptions.ConnectionError) or 'connection' in msg or 'name or service not known' in msg:
+        return ERROR_TAXONOMY['connection']
+    if isinstance(exc, requests.exceptions.HTTPError):
+        return ERROR_TAXONOMY['http']
+    if isinstance(exc, json.JSONDecodeError):
+        return ERROR_TAXONOMY['json']
+    return ERROR_TAXONOMY['unknown']
+
+
+=======
+>>>>>>> main
 def configure_runtime_security(insecure=False, verbose_errors=False):
     """Configure TLS verification and diagnostic verbosity globally."""
     global SSL_VERIFY, LOG_EXCEPTIONS
@@ -45,7 +85,12 @@ def configure_runtime_security(insecure=False, verbose_errors=False):
 
 def log_swallowed_exception(context, exc):
     if LOG_EXCEPTIONS:
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+        reason_code = classify_exception(exc)
+        log_event(logging.WARNING, f"{context}: {exc}", reason_code=reason_code)
+=======
         log_event(logging.WARNING, f"{context}: {exc}")
+>>>>>>> main
 
 # Simple in-memory caches to avoid redundant discovery work per target
 TECH_FP_CACHE = {}
@@ -315,21 +360,25 @@ def protocol_hopper(url):
         return [url, urllib.parse.urlunparse(parsed._replace(scheme="http"))]
     return [url]
 
-def create_stealth_session():
-    """Create a session with stealth capabilities"""
+def create_stealth_session(profile='default'):
+    """Create a session with deterministic reliability profiles."""
     session = requests.Session()
     session.verify = SSL_VERIFY
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+    session.timeout = TIMEOUT_PROFILES.get(profile, TIMEOUT_PROFILES['default'])
+=======
     session.timeout = random.uniform(3, 8)  # Random timeout
+>>>>>>> main
 
-    # Persistent connection pooling with retries to improve reliability
+    cfg = RETRY_PROFILES.get(profile, RETRY_PROFILES['default'])
     retry_strategy = Retry(
-        total=3,
-        backoff_factor=0.4,
+        total=cfg['total'],
+        backoff_factor=cfg['backoff_factor'],
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["HEAD", "GET", "POST"],
         raise_on_status=False,
     )
-    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=8, pool_maxsize=16)
+    adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=cfg['pool_connections'], pool_maxsize=cfg['pool_maxsize'])
     session.mount("http://", adapter)
     session.mount("https://", adapter)
 
@@ -1040,7 +1089,7 @@ def check_react4shell(target_url):
                                     'url': target_url,
                                     'endpoint': url,
                                     'status_code': test_resp.status_code,
-                                    'vulnerable': 'Potential',
+                                    'vulnerable': 'Unverified',
                                     'evidence': 'Payload accepted with different response',
                                     'payload_used': current_payload[:100],
                                     'timestamp': datetime.now().isoformat(),
@@ -1068,7 +1117,7 @@ def check_react4shell(target_url):
                                             'url': target_url,
                                             'endpoint': url,
                                             'status_code': get_resp.status_code,
-                                            'vulnerable': 'Potential',
+                                            'vulnerable': 'Unverified',
                                             'evidence': 'GET request accepted with payload',
                                             'method': 'GET',
                                             'payload_used': str(get_payload),
@@ -1093,6 +1142,48 @@ def check_react4shell(target_url):
         'timestamp': datetime.now().isoformat()
     }]
 
+def evaluate_finding_strictness(finding):
+    """Assign status/confidence/reason code using mandatory evidence criteria."""
+    status = finding.get('vulnerable')
+    evidence = (finding.get('evidence') or '').lower()
+    payload_used = bool(finding.get('payload_used'))
+
+    if status == 'Confirmed':
+        return {'status': 'confirmed', 'confidence': 'high', 'reason_code': 'RCE_CONFIRMED_REPRODUCIBLE'}
+
+    if status in ('Unverified', 'Potential'):
+        if payload_used and any(k in evidence for k in ['payload', 'accepted', 'api indicator']):
+            return {'status': 'unverified', 'confidence': 'medium', 'reason_code': 'EVIDENCE_PARTIAL_NEEDS_REPLAY'}
+        return {'status': 'unverified', 'confidence': 'low', 'reason_code': 'HEURISTIC_SIGNAL_ONLY'}
+
+    return {'status': 'not_vulnerable', 'confidence': 'low', 'reason_code': 'NO_EVIDENCE'}
+
+
+def build_siem_schema_report(results, scan_mode='active'):
+    findings = []
+    for r in results:
+        meta = evaluate_finding_strictness(r)
+        findings.append({
+            'target': r.get('url'),
+            'endpoint': r.get('endpoint'),
+            'timestamp': r.get('timestamp'),
+            'status': meta['status'],
+            'confidence': meta['confidence'],
+            'reason_code': meta['reason_code'],
+            'evidence': r.get('evidence'),
+            'status_code': r.get('status_code'),
+            'method': r.get('method'),
+            'raw': r,
+        })
+    return {
+        'schema_version': '1.0',
+        'schema_type': 'react2shell_siem_report',
+        'scan_mode': scan_mode,
+        'generated_at': datetime.now().isoformat(),
+        'findings': findings,
+    }
+
+
 def generate_report(results, output_file):
     if not results:
         return
@@ -1102,14 +1193,15 @@ def generate_report(results, output_file):
     
     # Separate confirmed from potential
     confirmed = [r for r in potential if r.get('vulnerable') == 'Confirmed']
-    potential_only = [r for r in potential if r.get('vulnerable') == 'Potential']
+    potential_only = [r for r in potential if r.get('vulnerable') == 'Unverified']
     
     report = {
         'scan_date': datetime.now().isoformat(),
         'total_scanned': len(results),
         'confirmed_vulnerabilities': len(confirmed),
-        'potential_vulnerabilities': len(potential_only),
-        'results': results
+        'unverified_findings': len(potential_only),
+        'results': results,
+        'siem': build_siem_schema_report(results, scan_mode='active')
     }
     
     # JSON report
@@ -1136,7 +1228,7 @@ def generate_report(results, output_file):
                 f.write("\n")
         
         if potential_only:
-            f.write("POTENTIAL VULNERABILITIES (NEEDS VERIFICATION):\n")
+            f.write("UNVERIFIED FINDINGS (NEEDS VERIFICATION):\n")
             f.write("-" * 70 + "\n")
             for i, vuln in enumerate(potential_only, 1):
                 f.write(f"{i}. {vuln['url']}\n")
@@ -1151,7 +1243,7 @@ def generate_report(results, output_file):
         f.write("SCAN STATISTICS:\n")
         f.write(f"  Total URLs scanned: {report['total_scanned']}\n")
         f.write(f"  Confirmed vulnerabilities: {report['confirmed_vulnerabilities']}\n")
-        f.write(f"  Potential vulnerabilities: {report['potential_vulnerabilities']}\n")
+        f.write(f"  Unverified findings: {report['unverified_findings']}\n")
         f.write(f"  Safe URLs: {report['total_scanned'] - len(potential)}\n")
         
         # Add WAF bypass stats
@@ -2032,6 +2124,16 @@ def safe_misconfig_audit(target_url):
 
 def safe_full_audit(target_url):
     """Run full passive audit family and aggregate strict verdict."""
+<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
+    registry = [
+        {'check_id': 'react2shell.passive.encoding', 'vulnerability_family': 'React2Shell', 'recommendation': 'Review input canonicalization and decoding stages.'},
+        {'check_id': 'react4shell.passive.api-surface', 'vulnerability_family': 'React4Shell', 'recommendation': 'Restrict exposed API/debug endpoints and validate expression inputs.'},
+        {'check_id': 'log4shell.passive.version', 'vulnerability_family': 'Log4Shell', 'recommendation': 'Upgrade log4j to patched versions and verify JNDI hardening.'},
+        {'check_id': 'log2shell.passive.misconfig', 'vulnerability_family': 'Log2Shell', 'recommendation': 'Harden logging configuration and management endpoints.'},
+    ]
+
+=======
+>>>>>>> main
     encoding = safe_encoding_audit(target_url)
     log_risk = safe_log_audit(target_url)
     deps = safe_dependency_audit(target_url)
@@ -2052,8 +2154,19 @@ def safe_full_audit(target_url):
         strict_summary['misconfig_issue_count'] > 0
     ) else 'low')
 
+    check_matrix = [
+        {'check_id': 'react2shell.passive.encoding', 'evidence': strict_summary['encoding_endpoints_with_observations'], 'recommendation': registry[0]['recommendation']},
+        {'check_id': 'react4shell.passive.api-surface', 'evidence': strict_summary['misconfig_issue_count'], 'recommendation': registry[1]['recommendation']},
+        {'check_id': 'log4shell.passive.version', 'evidence': log_risk.get('versions_detected', []), 'recommendation': registry[2]['recommendation']},
+        {'check_id': 'log2shell.passive.misconfig', 'evidence': misconfig.get('issues', []), 'recommendation': registry[3]['recommendation']},
+    ]
+
     return {
+        'schema_version': '1.0',
+        'schema_type': 'react2shell_safe_full_audit',
         'target': target_url,
+        'registry': registry,
+        'check_matrix': check_matrix,
         'encoding': encoding,
         'log_risk': log_risk,
         'dependency_leakage': deps,
