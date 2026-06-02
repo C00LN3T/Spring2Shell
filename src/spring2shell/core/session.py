@@ -27,6 +27,14 @@ def create_stealth_session(profile: str = "default") -> requests.Session:
     Returns:
         Configured :class:`requests.Session` instance.
     """
+    # Short-circuit to dry-run session if enabled
+    try:
+        from spring2shell.utils.dry_run import is_dry_run, DryRunSession
+        if is_dry_run():
+            return DryRunSession()  # type: ignore[return-value]
+    except ImportError:
+        pass
+
     session = requests.Session()
     session.verify = ssl_verify()
 

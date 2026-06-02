@@ -92,6 +92,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     bulk_scan(
         args.targets_file,
         args.output_prefix,
+        max_workers=getattr(args, "threads", 5),
         checkpoint=cp,
     )
 
