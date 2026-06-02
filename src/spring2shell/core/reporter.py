@@ -271,6 +271,44 @@ def write_dual_report(
     return json_path, txt_path
 
 
+def write_formatted_reports(
+    findings: list[dict[str, Any]],
+    output_prefix: str | Path,
+    formats: list[str] | None = None,
+) -> dict[str, Path]:
+    """Write scan reports in requested formats (json, txt, html, sarif).
+
+    Args:
+        findings:       List of finding dicts.
+        output_prefix:  Path prefix (without extension).
+        formats:        List of formats to write (e.g. ['json', 'html']).
+
+    Returns:
+        Dict mapping format string to the resolved Path written.
+    """
+    if formats is None:
+        formats = ["json", "txt"]
+
+    prefix = Path(output_prefix)
+    written: dict[str, Path] = {}
+
+    for fmt in formats:
+        fmt = fmt.lower().strip()
+        if fmt == "json":
+            written["json"] = write_report(findings, prefix.with_suffix(".json"))
+        elif fmt == "txt":
+            written["txt"] = write_txt_report(findings, prefix.with_suffix(".txt"))
+        elif fmt == "html":
+            from spring2shell.core.html_reporter import generate_html_report
+            written["html"] = generate_html_report(findings, prefix.with_suffix(".html"))
+        elif fmt == "sarif":
+            from spring2shell.utils.sarif_export import export_to_sarif
+            written["sarif"] = export_to_sarif(findings, prefix.with_suffix(".sarif.json"))
+
+    return written
+
+
+
 # ---------------------------------------------------------------------------
 # Console summary
 # ---------------------------------------------------------------------------

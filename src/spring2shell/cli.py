@@ -82,7 +82,6 @@ def _cmd_direct(args: argparse.Namespace) -> int:
 
 def _cmd_scan(args: argparse.Namespace) -> int:
     from spring2shell.core.scanner import bulk_scan
-    from spring2shell.core.html_reporter import generate_html_report
     from spring2shell.core.checkpoint import Checkpoint
     from pathlib import Path
     import json
@@ -96,16 +95,24 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         checkpoint=cp,
     )
 
-    if getattr(args, "html_report", False):
-        combined = Path(f"{args.output_prefix}_combined.json")
-        if combined.exists():
+    combined = Path(f"{args.output_prefix}_combined.json")
+    if combined.exists():
+        try:
             findings = json.loads(combined.read_text()).get("findings", [])
-            html_path = generate_html_report(findings, combined.with_suffix(".html"))
-            print(f"[+] HTML report: {html_path}")
+        except Exception:
+            findings = []
+
+        formats = [f.strip() for f in getattr(args, "format", "json,txt").split(",")]
+        if getattr(args, "html_report", False) and "html" not in formats:
+            formats.append("html")
+
+        from spring2shell.core.reporter import write_formatted_reports
+        written = write_formatted_reports(findings, f"{args.output_prefix}_combined", formats=formats)
+        for fmt, path in written.items():
+            print(f"[+] {fmt.upper()} report written: {path}")
 
     if getattr(args, "encrypt_reports", False):
         from spring2shell.core.crypto import encrypt_report
-        combined = Path(f"{args.output_prefix}_combined.json")
         if combined.exists():
             enc_path = encrypt_report(combined)
             print(f"[+] Report encrypted: {enc_path}")
@@ -186,6 +193,40 @@ def _cmd_nuclei_export(args: argparse.Namespace) -> int:
     if len(created) > 10:
         print(f"    ... and {len(created) - 10} more")
     return 0
+
+
+def _cmd_defectdojo_upload(args: argparse.Namespace) -> int:
+    """Upload scan findings to DefectDojo."""
+    import os
+    from pathlib import Path
+    from spring2shell.utils.defectdojo import upload_to_defectdojo
+
+    report_path = Path(args.report_file)
+    if not report_path.exists():
+        print(f"[!] Report file not found: {report_path}")
+        return 1
+
+    url = args.url or os.environ.get("DEFECTDOJO_URL")
+    api_key = args.api_key or os.environ.get("DEFECTDOJO_API_KEY")
+    env_id = os.environ.get("DEFECTDOJO_ENGAGEMENT_ID")
+    engagement_id = args.engagement_id or (int(env_id) if env_id else None)
+
+    if not url or not api_key or not engagement_id:
+        print("[!] Missing required DefectDojo parameters (url, api_key, engagement_id).")
+        print("    Pass them as CLI arguments or set environment variables: DEFECTDOJO_URL, DEFECTDOJO_API_KEY, DEFECTDOJO_ENGAGEMENT_ID")
+        return 1
+
+    success = upload_to_defectdojo(
+        report_path=report_path,
+        defectdojo_url=url,
+        api_key=api_key,
+        engagement_id=engagement_id,
+        lead_id=args.lead_id,
+        environment=args.environment,
+    )
+    if success:
+        return 0
+    return 1
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -549,6 +590,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan.add_argument("--resume", action="store_true", help="Resume from last checkpoint.")
     p_scan.add_argument("--html-report", action="store_true", help="Also generate HTML report.")
     p_scan.add_argument("--encrypt-reports", action="store_true", help="Encrypt output reports.")
+    p_scan.add_argument("--format", default="json,txt",
+                        help="Report formats to generate (comma-separated: json,txt,html,sarif).")
 
     # cve-scan
     p_cve = sub.add_parser("cve-scan", help="CVE-focused mass scan.")
@@ -595,6 +638,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_nuclei.add_argument("report_file", help="JSON report file to export from.")
     p_nuclei.add_argument("output_dir", help="Directory to write Nuclei templates into.")
 
+    # defectdojo-upload
+    p_dojo = sub.add_parser("defectdojo-upload", help="Upload JSON report to DefectDojo.")
+    p_dojo.add_argument("report_file", help="Path to JSON scan report.")
+    p_dojo.add_argument("--url", help="DefectDojo URL (or DEFECTDOJO_URL env var).")
+    p_dojo.add_argument("--api-key", help="API Key (or DEFECTDOJO_API_KEY env var).")
+    p_dojo.add_argument("--engagement-id", type=int, help="Engagement ID (or DEFECTDOJO_ENGAGEMENT_ID env var).")
+    p_dojo.add_argument("--lead-id", type=int, default=1, help="Lead User ID (default: 1).")
+    p_dojo.add_argument("--environment", default="Development", help="Environment (default: Development).")
+
     return parser
 
 
@@ -611,6 +663,7 @@ _COMMAND_MAP = {
     "exploit":        _cmd_exploit,
     "menu":           _cmd_menu,
     "nuclei-export":  _cmd_nuclei_export,
+    "defectdojo-upload": _cmd_defectdojo_upload,
 }
 
 
