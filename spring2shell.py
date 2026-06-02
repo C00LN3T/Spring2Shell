@@ -28,7 +28,6 @@ SSL_VERIFY = True
 LOG_EXCEPTIONS = False
 
 
-<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
 RETRY_PROFILES = {
     'default': {'total': 3, 'backoff_factor': 0.4, 'pool_connections': 8, 'pool_maxsize': 16},
     'safe-audit': {'total': 2, 'backoff_factor': 0.2, 'pool_connections': 6, 'pool_maxsize': 12},
@@ -66,8 +65,6 @@ def classify_exception(exc):
     return ERROR_TAXONOMY['unknown']
 
 
-=======
->>>>>>> main
 def configure_runtime_security(insecure=False, verbose_errors=False):
     """Configure TLS verification and diagnostic verbosity globally."""
     global SSL_VERIFY, LOG_EXCEPTIONS
@@ -85,12 +82,8 @@ def configure_runtime_security(insecure=False, verbose_errors=False):
 
 def log_swallowed_exception(context, exc):
     if LOG_EXCEPTIONS:
-<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
         reason_code = classify_exception(exc)
         log_event(logging.WARNING, f"{context}: {exc}", reason_code=reason_code)
-=======
-        log_event(logging.WARNING, f"{context}: {exc}")
->>>>>>> main
 
 # Simple in-memory caches to avoid redundant discovery work per target
 TECH_FP_CACHE = {}
@@ -364,11 +357,7 @@ def create_stealth_session(profile='default'):
     """Create a session with deterministic reliability profiles."""
     session = requests.Session()
     session.verify = SSL_VERIFY
-<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
     session.timeout = TIMEOUT_PROFILES.get(profile, TIMEOUT_PROFILES['default'])
-=======
-    session.timeout = random.uniform(3, 8)  # Random timeout
->>>>>>> main
 
     cfg = RETRY_PROFILES.get(profile, RETRY_PROFILES['default'])
     retry_strategy = Retry(
@@ -1043,19 +1032,19 @@ def check_react4shell(target_url):
                                 'apache', 'nginx', 'tomcat', 'spring'
                             ]
                             
-                        for indicator in exploit_indicators:
-                            if indicator in resp_text_lower:
-                                return react2_results + [{
-                                    'url': target_url,
-                                    'endpoint': url,
-                                    'status_code': test_resp.status_code,
-                                    'vulnerable': 'Confirmed',
-                                    'evidence': f'Found {indicator} in response',
-                                    'payload_used': current_payload[:100],
-                                    'timestamp': datetime.now().isoformat(),
-                                    'method': 'POST',
-                                    'content_type': test_headers["Content-Type"]
-                                }]
+                            for indicator in exploit_indicators:
+                                if indicator in resp_text_lower:
+                                    return react2_results + [{
+                                        'url': target_url,
+                                        'endpoint': url,
+                                        'status_code': test_resp.status_code,
+                                        'vulnerable': 'Confirmed',
+                                        'evidence': f'Found {indicator} in response',
+                                        'payload_used': current_payload[:100],
+                                        'timestamp': datetime.now().isoformat(),
+                                        'method': 'POST',
+                                        'content_type': test_headers["Content-Type"]
+                                    }]
                             
                             # If payload was accepted (different response than probe)
                             if test_resp.text != resp.text and len(test_resp.text) > 10:
@@ -2124,7 +2113,6 @@ def safe_misconfig_audit(target_url):
 
 def safe_full_audit(target_url):
     """Run full passive audit family and aggregate strict verdict."""
-<<<<<<< codex/evaluate-auditing-tool-for-spring-boot-fg2ieo
     registry = [
         {'check_id': 'react2shell.passive.encoding', 'vulnerability_family': 'React2Shell', 'recommendation': 'Review input canonicalization and decoding stages.'},
         {'check_id': 'react4shell.passive.api-surface', 'vulnerability_family': 'React4Shell', 'recommendation': 'Restrict exposed API/debug endpoints and validate expression inputs.'},
@@ -2132,8 +2120,6 @@ def safe_full_audit(target_url):
         {'check_id': 'log2shell.passive.misconfig', 'vulnerability_family': 'Log2Shell', 'recommendation': 'Harden logging configuration and management endpoints.'},
     ]
 
-=======
->>>>>>> main
     encoding = safe_encoding_audit(target_url)
     log_risk = safe_log_audit(target_url)
     deps = safe_dependency_audit(target_url)
@@ -2500,7 +2486,7 @@ def load_report_and_exploit(report_file):
                 if cmd_choice == 'exit':
                     print("[+] Exiting...")
                     sys.exit(0)
-                continueReact4Shell
+                continue
             
             # Execute exploitation
             exploit_vulnerability(
