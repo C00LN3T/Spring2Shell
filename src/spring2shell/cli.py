@@ -93,6 +93,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         args.output_prefix,
         max_workers=getattr(args, "threads", 5),
         checkpoint=cp,
+        use_async=getattr(args, "async_mode", False),
     )
 
     combined = Path(f"{args.output_prefix}_combined.json")
@@ -122,8 +123,30 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 def _cmd_cve_scan(args: argparse.Namespace) -> int:
     from spring2shell.core.scanner import cve_mass_scan
 
-    cve_mass_scan(args.targets_file, output=getattr(args, "output", None))
+    cve_mass_scan(
+        args.targets_file,
+        output=getattr(args, "output", None),
+        use_async=getattr(args, "async_mode", False),
+        max_workers=getattr(args, "threads", 5),
+    )
     return 0
+
+
+def _cmd_profile_waf(args: argparse.Namespace) -> int:
+    from spring2shell.core.waf_profiler import profile_waf, print_waf_profile
+    import json
+    from pathlib import Path
+
+    report = profile_waf(args.target)
+    print_waf_profile(report)
+
+    if args.output:
+        path = Path(args.output)
+        path.write_text(json.dumps(report, indent=4))
+        print(f"[+] Diagnostic profile saved: {path}")
+
+    return 0
+
 
 
 def _cmd_ssrf_scan(args: argparse.Namespace) -> int:
@@ -586,19 +609,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_scan = sub.add_parser("scan", help="Bulk scan from a targets file.")
     p_scan.add_argument("targets_file", help="File with one URL per line.")
     p_scan.add_argument("output_prefix", help="Output file prefix (e.g. reports/scan).")
-    p_scan.add_argument("-t", "--threads", type=int, default=5, help="Worker threads (default: 5).")
+    p_scan.add_argument("-t", "--threads", type=int, default=5, help="Worker threads or async tasks (default: 5).")
     p_scan.add_argument("--resume", action="store_true", help="Resume from last checkpoint.")
     p_scan.add_argument("--html-report", action="store_true", help="Also generate HTML report.")
     p_scan.add_argument("--encrypt-reports", action="store_true", help="Encrypt output reports.")
     p_scan.add_argument("--format", default="json,txt",
                         help="Report formats to generate (comma-separated: json,txt,html,sarif).")
+    p_scan.add_argument("--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine.")
 
     # cve-scan
     p_cve = sub.add_parser("cve-scan", help="CVE-focused mass scan.")
     p_cve.add_argument("targets_file", help="File with one URL per line.")
     p_cve.add_argument("-o", "--output", help="Write results to this file.")
     p_cve.add_argument("-t", "--threads", type=int, default=5,
-                       help="Worker threads (default: 5).")
+                       help="Worker threads or async tasks (default: 5).")
+    p_cve.add_argument("--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine.")
+
+    # profile-waf
+    p_profile = sub.add_parser("profile-waf", help="safely profile a target URL to check which characters/methods trigger WAF blocks.")
+    p_profile.add_argument("target", help="Target URL to profile.")
+    p_profile.add_argument("-o", "--output", help="Write diagnostic JSON report to this file.")
 
     # verify
     p_verify = sub.add_parser("verify", help="Verify if a previous RCE finding is real.")
@@ -664,6 +694,7 @@ _COMMAND_MAP = {
     "menu":           _cmd_menu,
     "nuclei-export":  _cmd_nuclei_export,
     "defectdojo-upload": _cmd_defectdojo_upload,
+    "profile-waf":    _cmd_profile_waf,
 }
 
 

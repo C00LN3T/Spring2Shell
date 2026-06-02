@@ -179,6 +179,24 @@ class RateLimiter:
         with self._lock:
             self._tokens = max(0.0, self._tokens - 1)
 
+    async def async_acquire(self) -> None:
+        """Asynchronously acquire a token without blocking the event loop."""
+        import asyncio
+        if self.rps <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last
+            self._last = now
+            self._tokens = min(self.rps, self._tokens + elapsed * self.rps)
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return
+            wait = (1.0 - self._tokens) / self.rps
+        await asyncio.sleep(wait)
+        with self._lock:
+            self._tokens = max(0.0, self._tokens - 1)
+
 
 # Module-level rate limiter (None = unlimited)
 _rate_limiter: RateLimiter | None = None
@@ -201,6 +219,12 @@ def rate_limit_acquire() -> None:
     """Acquire a rate-limit token if a limiter is configured."""
     if _rate_limiter:
         _rate_limiter.acquire()
+
+
+async def async_rate_limit_acquire() -> None:
+    """Asynchronously acquire a rate-limit token if a limiter is configured."""
+    if _rate_limiter:
+        await _rate_limiter.async_acquire()
 
 
 # ---------------------------------------------------------------------------

