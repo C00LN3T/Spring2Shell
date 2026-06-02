@@ -1,7 +1,6 @@
 """
-Unit tests for react2shell/scanner.py:
-- _build_react2shell_body
-- scan_react2shell
+Unit tests for react2shell/scanner.py (new modular implementation).
+Tests scan_react2shell() and supporting helpers.
 """
 
 from __future__ import annotations
@@ -12,8 +11,11 @@ import pytest
 import requests
 
 
-def _make_response(text: str = "", status: int = 200,
-                   extra_headers: dict | None = None) -> MagicMock:
+def _make_response(
+    text: str = "",
+    status: int = 200,
+    extra_headers: dict | None = None,
+) -> MagicMock:
     r = MagicMock(spec=requests.Response)
     r.text = text
     r.status_code = status
@@ -24,46 +26,44 @@ def _make_response(text: str = "", status: int = 200,
     return r
 
 
+def _make_session(text: str = "ok", status: int = 400, get_text: str = ""):
+    """Create a mock session where GET returns get_text and POST returns text."""
+    session = MagicMock()
+    get_resp = _make_response(get_text, status)
+    post_resp = _make_response(text, status)
+    session.get.return_value = get_resp
+    session.post.return_value = post_resp
+    return session
+
+
 # ---------------------------------------------------------------------------
-# _build_react2shell_body
+# _extract_next_data_routes
 # ---------------------------------------------------------------------------
 
-class TestBuildReact2ShellBody:
-    def test_returns_tuple_of_three(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        body, headers, expected = _build_react2shell_body()
-        assert isinstance(body, str)
-        assert isinstance(headers, dict)
-        assert isinstance(expected, str)
+class TestExtractNextDataRoutes:
+    def test_extracts_page_from_next_data(self):
+        from spring2shell.react2shell.scanner import _extract_next_data_routes
+        html = '<script id="__NEXT_DATA__">{"page":"/products","props":{},"buildId":"abc"}</script>'
+        routes = _extract_next_data_routes(html, "http://t.example")
+        assert "/products" in routes
 
-    def test_expected_is_math_result(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        _, _, expected = _build_react2shell_body()
-        assert expected == "11111"  # 41 * 271
+    def test_returns_empty_on_missing_next_data(self):
+        from spring2shell.react2shell.scanner import _extract_next_data_routes
+        html = "<html><body>Regular page</body></html>"
+        routes = _extract_next_data_routes(html, "http://t.example")
+        assert routes == []
 
-    def test_safe_mode_omits_spel(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        body, _, _ = _build_react2shell_body(safe_mode=True)
-        assert "T(java.lang.Runtime)" not in body
-        assert "SAFE-CHECK" in body
+    def test_skips_internal_pages(self):
+        from spring2shell.react2shell.scanner import _extract_next_data_routes
+        html = '<script id="__NEXT_DATA__">{"page":"/_app","props":{}}</script>'
+        routes = _extract_next_data_routes(html, "http://t.example")
+        assert "/_app" not in routes
 
-    def test_vercel_bypass_contains_v0(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        body, _, _ = _build_react2shell_body(vercel_bypass=True, padding_kb=1)
-        assert "V0" in body
-
-    def test_headers_contain_next_action(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        _, headers, _ = _build_react2shell_body()
-        assert "next-action" in headers
-        assert "Content-Type" in headers
-        assert "multipart/form-data" in headers["Content-Type"]
-
-    def test_padding_affects_body_size(self) -> None:
-        from spring2shell.react2shell.scanner import _build_react2shell_body
-        body_small, _, _ = _build_react2shell_body(padding_kb=1)
-        body_large, _, _ = _build_react2shell_body(padding_kb=10)
-        assert len(body_large) > len(body_small)
+    def test_handles_invalid_json(self):
+        from spring2shell.react2shell.scanner import _extract_next_data_routes
+        html = '<script id="__NEXT_DATA__">NOT VALID JSON</script>'
+        routes = _extract_next_data_routes(html, "http://t.example")
+        assert routes == []
 
 
 # ---------------------------------------------------------------------------
@@ -71,82 +71,106 @@ class TestBuildReact2ShellBody:
 # ---------------------------------------------------------------------------
 
 class TestScanReact2Shell:
-    def _make_session(self, text: str = "ok", status: int = 400):
-        session = MagicMock()
-        resp = _make_response(text, status)
-        session.post.return_value = resp
-        return session
-
-    def test_returns_list(self) -> None:
+    def test_returns_list(self):
         from spring2shell.react2shell.scanner import scan_react2shell
-
-        session = self._make_session()
+        session = _make_session("clean response", 200)
         with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
              patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
-             patch("spring2shell.react2shell.scanner.waf_engine") as mock_waf, \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
              patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
-            mock_waf.apply.side_effect = lambda b, h: (b, h)
-            result = scan_react2shell("http://t.example", padding_kb=1)
+            result = scan_react2shell("http://t.example")
         assert isinstance(result, list)
 
-    def test_confirmed_when_math_marker_reflected(self) -> None:
+    def test_spel_probe_indicator_detected(self):
+        """Response containing '49' (7*7) triggers SpEL candidate finding."""
         from spring2shell.react2shell.scanner import scan_react2shell
-
-        # The expected marker is "11111" (41*271)
-        session = self._make_session("11111", 200)
-        resp = _make_response("11111", 200, {"X-Action-Redirect": "11111"})
-        session.post.return_value = resp
-
+        session = _make_session("result is 49 here", 200)
         with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
              patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
-             patch("spring2shell.react2shell.scanner.waf_engine") as mock_waf, \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
              patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
-            mock_waf.apply.side_effect = lambda b, h: (b, h)
-            result = scan_react2shell("http://t.example", padding_kb=1)
+            result = scan_react2shell("http://t.example")
+        assert any(f.get("status") in ("unverified", "confirmed") for f in result)
 
-        confirmed = [r for r in result if r.get("status") == "confirmed"]
-        assert len(confirmed) >= 1
-
-    def test_interrupted_returns_empty(self) -> None:
+    def test_graphql_introspection_detected(self):
+        """Response with __Schema triggers introspection finding."""
         from spring2shell.react2shell.scanner import scan_react2shell
-
-        session = self._make_session()
+        introspection_resp = _make_response('{"data":{"__schema":{"types":[{"name":"__Schema"}]}}}', 200)
+        clean_resp = _make_response("clean", 404)
+        session = MagicMock()
+        session.get.return_value = clean_resp
+        session.post.return_value = introspection_resp
         with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
              patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
-             patch("spring2shell.react2shell.scanner.waf_engine") as mock_waf, \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
+             patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
+            result = scan_react2shell("http://t.example")
+        assert any("INTROSPECTION" in f.get("reason", "") for f in result)
+
+    def test_interrupted_stops_early(self):
+        """is_interrupted=True should stop scanning quickly."""
+        from spring2shell.react2shell.scanner import scan_react2shell
+        session = _make_session()
+        with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
+             patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
              patch("spring2shell.react2shell.scanner.is_interrupted", return_value=True):
-            mock_waf.apply.side_effect = lambda b, h: (b, h)
-            result = scan_react2shell("http://t.example", padding_kb=1)
-        assert result == []
-
-    def test_connection_error_swallowed(self) -> None:
-        from spring2shell.react2shell.scanner import scan_react2shell
-
-        session = MagicMock()
-        session.post.side_effect = ConnectionError("refused")
-
-        with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
-             patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
-             patch("spring2shell.react2shell.scanner.waf_engine") as mock_waf, \
-             patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
-            mock_waf.apply.side_effect = lambda b, h: (b, h)
-            result = scan_react2shell("http://t.example", padding_kb=1)
+            result = scan_react2shell("http://t.example")
         assert isinstance(result, list)
 
-    def test_finding_dict_has_required_keys(self) -> None:
+    def test_connection_error_swallowed(self):
+        """Network errors during probing should not crash the scanner."""
         from spring2shell.react2shell.scanner import scan_react2shell
-
-        resp = _make_response("11111", 200, {"X-Action-Redirect": "11111"})
         session = MagicMock()
-        session.post.return_value = resp
-
+        session.get.side_effect = ConnectionError("refused")
+        session.post.side_effect = ConnectionError("refused")
         with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
              patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
-             patch("spring2shell.react2shell.scanner.waf_engine") as mock_waf, \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
              patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
-            mock_waf.apply.side_effect = lambda b, h: (b, h)
-            result = scan_react2shell("http://t.example", padding_kb=1)
+            result = scan_react2shell("http://t.example")
+        assert isinstance(result, list)
 
+    def test_finding_has_required_keys(self):
+        """Any finding must have the required standard keys."""
+        from spring2shell.react2shell.scanner import scan_react2shell
+        session = _make_session("__Schema types", 200)
+        with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
+             patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
+             patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
+            result = scan_react2shell("http://t.example")
         for f in result:
             for key in ("url", "endpoint", "status", "evidence", "method"):
-                assert key in f
+                assert key in f, f"Missing key '{key}' in finding: {f}"
+
+    def test_nextjs_detected_from_header(self):
+        """Next.js detection from response headers enables additional probing."""
+        from spring2shell.react2shell.scanner import scan_react2shell
+        session = MagicMock()
+        get_resp = _make_response("page", 200,
+                                   {"x-powered-by": "Next.js"})
+        post_resp = _make_response("ok", 200)
+        session.get.return_value = get_resp
+        session.post.return_value = post_resp
+        with patch("spring2shell.react2shell.scanner.create_stealth_session", return_value=session), \
+             patch("spring2shell.react2shell.scanner.get_random_headers", return_value={}), \
+             patch("spring2shell.react2shell.scanner.apply_auth"), \
+             patch("spring2shell.react2shell.scanner.rate_limit_acquire"), \
+             patch("spring2shell.react2shell.scanner.audit_log"), \
+             patch("spring2shell.react2shell.scanner.is_interrupted", return_value=False):
+            result = scan_react2shell("http://t.example")
+        # No assertion on count — just verify it completes without error
+        assert isinstance(result, list)

@@ -59,11 +59,11 @@ def load_targets(path: str | Path) -> list[str]:
 def _parse_burp_xml(content: str) -> list[str]:
     """Parse Burp Suite XML export — <items><item><url>…</url></item></items>."""
     urls: list[str] = []
-    # Use regex to avoid requiring xml.etree on all platforms
+    # Strip CDATA wrappers: <![CDATA[...]]> → content inside
+    content = re.sub(r"<!\[CDATA\[(.*?)]]>", r"\1", content, flags=re.DOTALL)
     pattern = re.compile(r"<url>(.*?)</url>", re.DOTALL | re.IGNORECASE)
     for match in pattern.finditer(content):
         url = match.group(1).strip()
-        # Burp sometimes CDATA-encodes or entity-encodes URLs
         url = url.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
         if url.startswith(("http://", "https://")):
             urls.append(url)

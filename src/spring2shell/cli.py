@@ -163,7 +163,33 @@ def _cmd_encrypt(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_nuclei_export(args: argparse.Namespace) -> int:
+    """Export scan findings as Nuclei v3 YAML templates."""
+    import json
+    from pathlib import Path
+    from spring2shell.utils.nuclei_export import export_templates
+
+    report_path = Path(args.report_file)
+    if not report_path.exists():
+        print(f"[!] Report file not found: {report_path}")
+        return 1
+    try:
+        data = json.loads(report_path.read_text())
+        findings = data.get("findings", data) if isinstance(data, dict) else data
+    except Exception as exc:
+        print(f"[!] Could not parse report: {exc}")
+        return 1
+    created = export_templates(findings, args.output_dir)
+    print(f"[+] {len(created)} Nuclei templates written to {args.output_dir}")
+    for p in created[:10]:
+        print(f"    {p}")
+    if len(created) > 10:
+        print(f"    ... and {len(created) - 10} more")
+    return 0
+
+
 def _cmd_verify(args: argparse.Namespace) -> int:
+
     """Verify a potential RCE: echo-marker test + optional blind (time-delay + DNS)."""
     from spring2shell.core.verifier import check_real_rce, blind_rce_test
 
@@ -422,6 +448,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="default",
         help="Runtime profile (timeout, retries, delay). Default: default.",
     )
+    parser.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="Print payloads and endpoints that WOULD be sent without making real HTTP requests.",
+    )
+
 
     # ── Auth flags ───────────────────────────────────────────────────────────
     auth_group = parser.add_argument_group("authentication")
@@ -559,22 +590,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_enc.add_argument("--remove-original", action="store_true",
                        help="Delete plaintext file after encryption.")
 
+    # nuclei-export
+    p_nuclei = sub.add_parser("nuclei-export", help="Export findings as Nuclei v3 YAML templates.")
+    p_nuclei.add_argument("report_file", help="JSON report file to export from.")
+    p_nuclei.add_argument("output_dir", help="Directory to write Nuclei templates into.")
+
     return parser
 
 
 _COMMAND_MAP = {
-    "safe-audit": _cmd_safe_audit,
-    "log-audit":  _cmd_log_audit,
-    "direct":     _cmd_direct,
-    "scan":       _cmd_scan,
-    "cve-scan":   _cmd_cve_scan,
+    "safe-audit":     _cmd_safe_audit,
+    "log-audit":      _cmd_log_audit,
+    "direct":         _cmd_direct,
+    "scan":           _cmd_scan,
+    "cve-scan":       _cmd_cve_scan,
     "ssrf-scan":  _cmd_ssrf_scan,
-    "ssti-scan":  _cmd_ssti_scan,
-    "encrypt":    _cmd_encrypt,
-    "verify":     _cmd_verify,
-    "exploit":    _cmd_exploit,
-    "menu":       _cmd_menu,
+    "ssti-scan":      _cmd_ssti_scan,
+    "encrypt":        _cmd_encrypt,
+    "verify":         _cmd_verify,
+    "exploit":        _cmd_exploit,
+    "menu":           _cmd_menu,
+    "nuclei-export":  _cmd_nuclei_export,
 }
+
 
 
 # ---------------------------------------------------------------------------
@@ -657,6 +695,16 @@ def _configure_subsystems(args: argparse.Namespace) -> None:
         configure_oob(args)
     except ImportError:
         pass
+
+    # Dry-run mode must be configured last (it overrides session creation)
+    if getattr(args, "dry_run", False):
+        try:
+            from spring2shell.utils.dry_run import enable_dry_run
+            enable_dry_run()
+            print("[DRY-RUN] Mode enabled — no real HTTP requests will be sent.")
+        except ImportError:
+            pass
+
 
 
 if __name__ == "__main__":
