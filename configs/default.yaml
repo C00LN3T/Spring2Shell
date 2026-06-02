@@ -1,0 +1,38 @@
+# spring2shell — default runtime configuration
+# Override individual values via environment variables (see .env.example)
+# or by specifying a different profile with --profile <name>
+
+network:
+  ssl_verify: true
+  timeout: 6                # seconds per request
+  max_workers: 10           # concurrent scanning threads
+
+retry:
+  total: 3
+  backoff_factor: 0.4
+  status_forcelist: [429, 500, 502, 503, 504]
+  allowed_methods: ["HEAD", "GET", "POST"]
+  pool_connections: 8
+  pool_maxsize: 16
+
+stealth:
+  delay_enabled: true
+  delay_probability: 0.7    # 70% chance of inter-request delay
+  delay_min: 0.1            # seconds
+  delay_max: 1.5            # seconds
+  max_redirects: 0
+
+logging:
+  level: INFO               # DEBUG | INFO | WARNING | ERROR
+  verbose_errors: false     # Log swallowed network exceptions
+  format: "[%(asctime)s] %(levelname)s %(message)s"
+  datefmt: "%H:%M:%S"
+
+output:
+  report_dir: reports
+  default_format: json      # json | txt
+
+data:
+  payloads_dir: data/payloads
+  endpoints_dir: data/endpoints
+  useragents_file: data/useragents/user_agents.txt

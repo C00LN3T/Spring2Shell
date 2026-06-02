@@ -1,0 +1,30 @@
+# spring2shell configuration file
+# CLI arguments always take priority over values in this file.
+# Copy this file to ./config.yaml and customize for your team.
+
+# ── Network ──────────────────────────────────────────────────────────────────
+# proxy: http://127.0.0.1:8080      # Burp Suite Pro
+# proxy: socks5://127.0.0.1:9050   # Tor
+
+# rate: 50                          # Max requests/sec (0 = unlimited)
+
+# ── OOB (Blind RCE Detection) ────────────────────────────────────────────────
+# oob_server: https://your-interactsh.domain.com
+# oob_token: your-interactsh-auth-token
+
+# ── Authentication ────────────────────────────────────────────────────────────
+# auth_bearer: eyJhbGci...
+# auth_basic: admin:password
+# auth_cookie: session=abc123; csrftoken=xyz
+# auth_header: X-API-Key:your-key
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+# webhook: https://hooks.slack.com/services/T.../B.../xxx
+# webhook: https://discord.com/api/webhooks/...
+
+# ── Audit & Output ────────────────────────────────────────────────────────────
+# audit_log: ./logs/audit.jsonl
+
+# ── Scanning defaults ─────────────────────────────────────────────────────────
+# threads: 10
+# insecure: false

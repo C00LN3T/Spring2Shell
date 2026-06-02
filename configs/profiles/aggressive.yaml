@@ -1,0 +1,19 @@
+# Aggressive profile — maximizes detection coverage, accepts higher noise
+# Inherits default.yaml and overrides specific values
+
+network:
+  ssl_verify: true
+  timeout: 8
+
+retry:
+  total: 4
+  backoff_factor: 0.5
+  pool_connections: 10
+  pool_maxsize: 20
+
+stealth:
+  delay_enabled: false      # No delay — speed over stealth
+  max_redirects: 3          # Follow redirects
+
+logging:
+  verbose_errors: true

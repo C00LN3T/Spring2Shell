@@ -1,0 +1,23 @@
+# Stealth profile — minimizes detection risk, maximizes evasion
+# Inherits default.yaml and overrides specific values
+
+network:
+  ssl_verify: true
+  timeout: 6
+
+retry:
+  total: 2
+  backoff_factor: 0.8
+  pool_connections: 4
+  pool_maxsize: 8
+
+stealth:
+  delay_enabled: true
+  delay_probability: 0.9    # 90% chance of delay
+  delay_min: 0.5            # Longer minimum delay
+  delay_max: 3.0            # Up to 3 seconds between requests
+  max_redirects: 0
+
+logging:
+  level: WARNING            # Minimal output
+  verbose_errors: false

