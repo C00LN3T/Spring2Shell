@@ -201,7 +201,14 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
     # ── Step 2: Build endpoint list ──────────────────────────────────────────
     endpoints_to_test = list(_GRAPHQL_ENDPOINTS)
     if is_nextjs:
-        endpoints_to_test += ["/api/auth", "/api/user", "/api/session", "/api/data", "/api/hello", *discovered_routes]
+        endpoints_to_test += [
+            "/api/auth",
+            "/api/user",
+            "/api/session",
+            "/api/data",
+            "/api/hello",
+            *discovered_routes,
+        ]
     endpoints_to_test = list(dict.fromkeys(endpoints_to_test))  # deduplicate
 
     # ── Step 3: GraphQL introspection check ──────────────────────────────────

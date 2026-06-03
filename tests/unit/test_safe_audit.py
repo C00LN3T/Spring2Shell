@@ -193,7 +193,6 @@ class TestSafeMisconfigAudit:
     def test_detects_exposed_actuator(self) -> None:
         from spring2shell.audit.safe_audit import safe_misconfig_audit
 
-
         def get_side(url, *args, **kwargs):
             # root request returns good headers
             if url == "http://t.example":
@@ -394,9 +393,7 @@ class TestRunSafeAudit:
             "spring2shell.audit.log_audit.run_log_audit", return_value=mock_log_findings
         ), patch(
             "spring2shell.audit.safe_audit.safe_dependency_audit", return_value=mock_deps
-        ), patch(
-            "spring2shell.audit.safe_audit.safe_misconfig_audit", return_value=mock_misconfig
-        ):
+        ), patch("spring2shell.audit.safe_audit.safe_misconfig_audit", return_value=mock_misconfig):
             findings = run_safe_audit("http://t.example")
 
         assert isinstance(findings, list)
@@ -410,4 +407,3 @@ class TestRunSafeAudit:
         assert "MISSING_SECURITY_HEADERS" in reasons
         assert "VERSION_DISCLOSURE" in reasons
         assert "EXPOSED_MANAGEMENT_ENDPOINT" in reasons
-

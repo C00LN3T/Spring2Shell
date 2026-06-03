@@ -416,7 +416,11 @@ def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
                     reason="DECODING_OBSERVATION",
                     evidence=evidence,
                     method=method,
-                    extra={"variant": variant, "reflected_plain": reflected_plain, "reflected_encoded": reflected_encoded}
+                    extra={
+                        "variant": variant,
+                        "reflected_plain": reflected_plain,
+                        "reflected_encoded": reflected_encoded,
+                    },
                 )
                 findings.append(finding)
     except Exception as exc:
@@ -447,7 +451,7 @@ def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
                 evidence=evidence,
                 method="GET",
                 status_code=status_code,
-                extra={"indicators": indicators}
+                extra={"indicators": indicators},
             )
             findings.append(finding)
     except Exception as exc:
@@ -469,7 +473,7 @@ def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
                     reason="MISSING_SECURITY_HEADERS",
                     evidence=evidence,
                     method="GET",
-                    extra={"missing_headers": missing}
+                    extra={"missing_headers": missing},
                 )
                 findings.append(finding)
             elif issue_type == "version_disclosure":
@@ -484,7 +488,7 @@ def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
                     reason="VERSION_DISCLOSURE",
                     evidence=evidence,
                     method="GET",
-                    extra={"header": header, "value": value}
+                    extra={"header": header, "value": value},
                 )
                 findings.append(finding)
             elif issue_type == "exposed_management_endpoint":
@@ -500,11 +504,10 @@ def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
                     reason="EXPOSED_MANAGEMENT_ENDPOINT",
                     evidence=evidence,
                     method="GET",
-                    status_code=status_code
+                    status_code=status_code,
                 )
                 findings.append(finding)
     except Exception as exc:
         log_swallowed_exception("run_safe_audit misconfig", exc)
 
     return findings
-

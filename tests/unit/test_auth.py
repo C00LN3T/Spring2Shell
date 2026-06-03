@@ -37,7 +37,6 @@ class TestRateLimiter:
         rl = RateLimiter(1)  # 1 rps — any 2nd+ request must wait
         sleep_calls: list[float] = []
 
-
         def mock_sleep(secs: float) -> None:
             sleep_calls.append(secs)
 

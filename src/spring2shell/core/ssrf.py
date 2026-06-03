@@ -133,10 +133,14 @@ def _check_ssrf_response(resp: requests.Response, payload_url: str) -> str | Non
         if indicator in text:
             return f"SSRF indicator '{indicator}' found when targeting {payload_url}"
     # Also check status code anomalies — a 200 on a metadata URL is suspicious
-    if resp.status_code == 200 and any(
-        cloud in payload_url
-        for cloud in ["169.254.169.254", "metadata.google", "kubernetes.default"]
-    ) and len(text) > 10:
+    if (
+        resp.status_code == 200
+        and any(
+            cloud in payload_url
+            for cloud in ["169.254.169.254", "metadata.google", "kubernetes.default"]
+        )
+        and len(text) > 10
+    ):
         return f"Suspicious 200 OK from cloud metadata request to {payload_url}"
     return None
 
