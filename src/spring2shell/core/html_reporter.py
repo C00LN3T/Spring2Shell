@@ -12,7 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Remediation recommendations
 # ---------------------------------------------------------------------------
@@ -211,6 +210,7 @@ new Chart(barCtx, {{
 # Report builder
 # ---------------------------------------------------------------------------
 
+
 def generate_html_report(
     findings: list[dict[str, Any]],
     output_path: str | Path,
@@ -244,7 +244,9 @@ def generate_html_report(
 
     # Table rows
     rows_html = ""
-    for f in sorted(findings, key=lambda x: {"confirmed": 0, "unverified": 1}.get(x.get("status", ""), 2)):
+    for f in sorted(
+        findings, key=lambda x: {"confirmed": 0, "unverified": 1}.get(x.get("status", ""), 2)
+    ):
         sclass = _severity_class(f.get("status", ""), f.get("confidence", ""))
         label = _severity_label(f.get("status", ""))
         ep = f.get("endpoint") or f.get("url", "N/A")
@@ -255,7 +257,7 @@ def generate_html_report(
         rows_html += (
             f'<tr><td><span class="badge bg-{sclass}">{label}</span></td>'
             f'<td class="small text-truncate" style="max-width:300px;" title="{ep}">{ep}</td>'
-            f'<td><code>{cve}</code></td><td>{conf}</td><td>{method}</td><td>{ts}</td></tr>\n'
+            f"<td><code>{cve}</code></td><td>{conf}</td><td>{method}</td><td>{ts}</td></tr>\n"
         )
 
     # Finding cards
@@ -279,14 +281,14 @@ def generate_html_report(
   <div class="card-body">
     <dl class="row mb-0">
       <dt class="col-sm-2">Target URL</dt>
-      <dd class="col-sm-10"><code>{f.get('url', 'N/A')}</code></dd>
+      <dd class="col-sm-10"><code>{f.get("url", "N/A")}</code></dd>
       <dt class="col-sm-2">Confidence</dt>
-      <dd class="col-sm-10">{f.get('confidence', '—')}</dd>
+      <dd class="col-sm-10">{f.get("confidence", "—")}</dd>
       <dt class="col-sm-2">Reason</dt>
-      <dd class="col-sm-10">{f.get('reason', '—')}</dd>
+      <dd class="col-sm-10">{f.get("reason", "—")}</dd>
       <dt class="col-sm-2">Evidence</dt>
-      <dd class="col-sm-10">{f.get('evidence', '—')}</dd>
-      {"<dt class='col-sm-2'>Payload</dt><dd class='col-sm-10'><div class='code-block'>" + (f.get('payload') or '') + "</div></dd>" if f.get('payload') else ""}
+      <dd class="col-sm-10">{f.get("evidence", "—")}</dd>
+      {"<dt class='col-sm-2'>Payload</dt><dd class='col-sm-10'><div class='code-block'>" + (f.get("payload") or "") + "</div></dd>" if f.get("payload") else ""}
       <dt class="col-sm-2">Remediation</dt>
       <dd class="col-sm-10 text-warning">{remediation}</dd>
     </dl>

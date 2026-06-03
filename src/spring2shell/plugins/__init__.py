@@ -11,7 +11,7 @@ from typing import Type
 
 from spring2shell.plugins.base import BasePlugin
 
-_PLUGINS: dict[str, Type[BasePlugin]] = {}
+_PLUGINS: dict[str, type[BasePlugin]] = {}
 
 
 def load_plugins() -> None:
@@ -25,19 +25,18 @@ def load_plugins() -> None:
     for _, module_name, _ in pkgutil.walk_packages(path, package.__name__ + "."):
         try:
             mod = importlib.import_module(module_name)
-            for name, attr in vars(mod).items():
+            for _name, attr in vars(mod).items():
                 if (
                     isinstance(attr, type)
                     and issubclass(attr, BasePlugin)
                     and attr is not BasePlugin
-                ):
-                    if attr.name:
-                        _PLUGINS[attr.name] = attr
+                ) and attr.name:
+                    _PLUGINS[attr.name] = attr
         except Exception:
             pass
 
 
-def get_plugins() -> dict[str, Type[BasePlugin]]:
+def get_plugins() -> dict[str, type[BasePlugin]]:
     """Return dict of registered plugins, loading them first if empty."""
     if not _PLUGINS:
         load_plugins()

@@ -13,32 +13,27 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import re
 import urllib.parse
 from typing import Any
 
-import requests
-
-from spring2shell.core.reporter import build_finding
 from spring2shell.core.session import create_stealth_session
-from spring2shell.discovery.endpoints import prioritize_endpoints, discover_endpoints
+from spring2shell.discovery.endpoints import discover_endpoints, prioritize_endpoints
 from spring2shell.discovery.fingerprint import tech_fingerprint
 from spring2shell.utils.logging import log_event, log_swallowed_exception
-from spring2shell.utils.network import ssl_verify
 from spring2shell.utils.signals import is_interrupted
-
 
 # ---------------------------------------------------------------------------
 # Marker variant helpers
 # ---------------------------------------------------------------------------
 
+
 def _marker_variants(marker: str) -> dict[str, str]:
     return {
-        "plain":      marker,
-        "url":        urllib.parse.quote(marker, safe=""),
+        "plain": marker,
+        "url": urllib.parse.quote(marker, safe=""),
         "double_url": urllib.parse.quote(urllib.parse.quote(marker, safe=""), safe=""),
-        "base64":     base64.b64encode(marker.encode()).decode(),
-        "unicode":    "".join(f"\\u{ord(ch):04x}" for ch in marker),
+        "base64": base64.b64encode(marker.encode()).decode(),
+        "unicode": "".join(f"\\u{ord(ch):04x}" for ch in marker),
     }
 
 
@@ -46,8 +41,15 @@ def _marker_variants(marker: str) -> dict[str, str]:
 # safe_encoding_audit
 # ---------------------------------------------------------------------------
 
-_AUDIT_PATHS_FAST = ["/actuator", "/actuator/env", "/v2/api-docs", "/v3/api-docs",
-                     "/graphql", "/api/graphql", "/api"]
+_AUDIT_PATHS_FAST = [
+    "/actuator",
+    "/actuator/env",
+    "/v2/api-docs",
+    "/v3/api-docs",
+    "/graphql",
+    "/api/graphql",
+    "/api",
+]
 
 
 def safe_encoding_audit(
@@ -87,6 +89,7 @@ def safe_encoding_audit(
         if is_interrupted():
             break
         import random
+
         marker = f"SAFE_AUDIT_{random.randint(10000, 99999)}"
         variants = _marker_variants(marker)
         ep_result: dict[str, Any] = {
@@ -101,25 +104,33 @@ def safe_encoding_audit(
                 "User-Agent": "Mozilla/5.0 (compatible; spring2shell-safe-audit/2.0)",
                 "Content-Type": "application/json",
             }
-            body = json.dumps({
-                "audit": "encoding-check",
-                "probe": variant_value,
-                "query": "query Audit { __typename }",
-                "variables": {"probe": variant_value},
-            })
+            body = json.dumps(
+                {
+                    "audit": "encoding-check",
+                    "probe": variant_value,
+                    "query": "query Audit { __typename }",
+                    "variables": {"probe": variant_value},
+                }
+            )
             # POST
             try:
                 pr = session.post(endpoint, data=body, headers=headers, timeout=timeout)
-                ep_result["status"].append({
-                    "method": "POST", "variant": variant_name,
-                    "status_code": pr.status_code,
-                })
+                ep_result["status"].append(
+                    {
+                        "method": "POST",
+                        "variant": variant_name,
+                        "status_code": pr.status_code,
+                    }
+                )
                 if marker in pr.text or variant_value in pr.text:
-                    ep_result["decoding_observations"].append({
-                        "method": "POST", "variant": variant_name,
-                        "reflected_plain": marker in pr.text,
-                        "reflected_encoded": variant_value in pr.text,
-                    })
+                    ep_result["decoding_observations"].append(
+                        {
+                            "method": "POST",
+                            "variant": variant_name,
+                            "reflected_plain": marker in pr.text,
+                            "reflected_encoded": variant_value in pr.text,
+                        }
+                    )
             except Exception as exc:
                 log_swallowed_exception(f"encoding_audit POST {endpoint}", exc)
 
@@ -131,24 +142,31 @@ def safe_encoding_audit(
                     headers=headers,
                     timeout=timeout,
                 )
-                ep_result["status"].append({
-                    "method": "GET", "variant": variant_name,
-                    "status_code": gr.status_code,
-                })
+                ep_result["status"].append(
+                    {
+                        "method": "GET",
+                        "variant": variant_name,
+                        "status_code": gr.status_code,
+                    }
+                )
                 if marker in gr.text or variant_value in gr.text:
-                    ep_result["decoding_observations"].append({
-                        "method": "GET", "variant": variant_name,
-                        "reflected_plain": marker in gr.text,
-                        "reflected_encoded": variant_value in gr.text,
-                    })
+                    ep_result["decoding_observations"].append(
+                        {
+                            "method": "GET",
+                            "variant": variant_name,
+                            "reflected_plain": marker in gr.text,
+                            "reflected_encoded": variant_value in gr.text,
+                        }
+                    )
             except Exception as exc:
                 log_swallowed_exception(f"encoding_audit GET {endpoint}", exc)
 
         if ep_result["decoding_observations"] or ep_result["status"]:
             results.append(ep_result)
 
-    log_event(logging.INFO, "safe_encoding_audit complete",
-              endpoints=len(endpoints), results=len(results))
+    log_event(
+        logging.INFO, "safe_encoding_audit complete", endpoints=len(endpoints), results=len(results)
+    )
     return results
 
 
@@ -157,14 +175,33 @@ def safe_encoding_audit(
 # ---------------------------------------------------------------------------
 
 _DEPENDENCY_PATHS = [
-    "/actuator/env", "/actuator/info", "/actuator/configprops",
-    "/v2/api-docs", "/v3/api-docs", "/swagger-ui.html", "/swagger-ui/",
+    "/actuator/env",
+    "/actuator/info",
+    "/actuator/configprops",
+    "/v2/api-docs",
+    "/v3/api-docs",
+    "/swagger-ui.html",
+    "/swagger-ui/",
 ]
 
 _DEPENDENCY_INDICATORS = [
-    "spring-boot", "log4j", "logback", "slf4j", "jackson", "tomcat",
-    "netty", "hibernate", "reactor", "snakeyaml", "commons-", "org.springframework",
-    "fastjson", "gson", "okhttp", "jetty", "undertow",
+    "spring-boot",
+    "log4j",
+    "logback",
+    "slf4j",
+    "jackson",
+    "tomcat",
+    "netty",
+    "hibernate",
+    "reactor",
+    "snakeyaml",
+    "commons-",
+    "org.springframework",
+    "fastjson",
+    "gson",
+    "okhttp",
+    "jetty",
+    "undertow",
 ]
 
 
@@ -188,11 +225,13 @@ def safe_dependency_audit(target_url: str) -> dict[str, Any]:
             lower = resp.text[:200_000].lower()
             found = [ind for ind in _DEPENDENCY_INDICATORS if ind in lower]
             if found:
-                results["leaks"].append({
-                    "path": path,
-                    "status_code": resp.status_code,
-                    "indicators": found[:20],
-                })
+                results["leaks"].append(
+                    {
+                        "path": path,
+                        "status_code": resp.status_code,
+                        "indicators": found[:20],
+                    }
+                )
         except Exception as exc:
             log_swallowed_exception(f"dependency_audit {path}", exc)
 
@@ -211,8 +250,11 @@ _SECURITY_HEADERS_REQUIRED = [
 ]
 
 _MGMT_PATHS = [
-    "/actuator", "/actuator/env", "/actuator/beans",
-    "/actuator/mappings", "/actuator/configprops",
+    "/actuator",
+    "/actuator/env",
+    "/actuator/beans",
+    "/actuator/mappings",
+    "/actuator/configprops",
 ]
 
 
@@ -234,18 +276,22 @@ def safe_misconfig_audit(target_url: str) -> dict[str, Any]:
         h_lower = {k.lower(): v for k, v in resp.headers.items()}
         missing = [r for r in _SECURITY_HEADERS_REQUIRED if r not in h_lower]
         if missing:
-            findings["issues"].append({
-                "type": "missing_security_headers",
-                "missing": missing,
-            })
+            findings["issues"].append(
+                {
+                    "type": "missing_security_headers",
+                    "missing": missing,
+                }
+            )
         # Also check for Server/X-Powered-By disclosure
         for disclosure_header in ("server", "x-powered-by"):
             if disclosure_header in h_lower:
-                findings["issues"].append({
-                    "type": "version_disclosure",
-                    "header": disclosure_header,
-                    "value": h_lower[disclosure_header],
-                })
+                findings["issues"].append(
+                    {
+                        "type": "version_disclosure",
+                        "header": disclosure_header,
+                        "value": h_lower[disclosure_header],
+                    }
+                )
     except Exception as exc:
         log_swallowed_exception("misconfig_audit root", exc)
 
@@ -254,11 +300,13 @@ def safe_misconfig_audit(target_url: str) -> dict[str, Any]:
         try:
             resp = session.get(url, timeout=8)
             if resp.status_code == 200:
-                findings["issues"].append({
-                    "type": "exposed_management_endpoint",
-                    "path": path,
-                    "status_code": 200,
-                })
+                findings["issues"].append(
+                    {
+                        "type": "exposed_management_endpoint",
+                        "path": path,
+                        "status_code": 200,
+                    }
+                )
         except Exception as exc:
             log_swallowed_exception(f"misconfig_audit {path}", exc)
 
@@ -269,6 +317,7 @@ def safe_misconfig_audit(target_url: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # safe_full_audit
 # ---------------------------------------------------------------------------
+
 
 def safe_full_audit(target_url: str) -> dict[str, Any]:
     """Run all four passive audits and compute an overall risk level.
@@ -301,9 +350,7 @@ def safe_full_audit(target_url: str) -> dict[str, Any]:
     log_risk_level = log_risk_full.get("risk", "low")
     misconfig_count = len(misconfig.get("issues", []))
     dep_leak_count = len(deps.get("leaks", []))
-    encoding_observations = sum(
-        1 for e in encoding if e.get("decoding_observations")
-    )
+    encoding_observations = sum(1 for e in encoding if e.get("decoding_observations"))
 
     if log_risk_level == "high" or misconfig_count >= 3:
         overall_risk = "high"
@@ -320,8 +367,7 @@ def safe_full_audit(target_url: str) -> dict[str, Any]:
         "overall_risk": overall_risk,
     }
 
-    log_event(logging.INFO, "safe_full_audit complete",
-              target=target_url, risk=overall_risk)
+    log_event(logging.INFO, "safe_full_audit complete", target=target_url, risk=overall_risk)
 
     return {
         "schema_version": "1.0",
@@ -329,7 +375,7 @@ def safe_full_audit(target_url: str) -> dict[str, Any]:
         "target": target_url,
         "encoding": encoding,
         "log_risk": log_risk_full,
-        "log_findings": [f for f in log_risk_findings],
+        "log_findings": list(log_risk_findings),
         "dependency_leakage": deps,
         "misconfiguration": misconfig,
         "strict_summary": strict_summary,

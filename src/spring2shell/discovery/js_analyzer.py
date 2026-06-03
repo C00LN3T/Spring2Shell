@@ -47,10 +47,4 @@ def analyze_js_endpoints(target_url: str) -> list[str]:
     except Exception as exc:
         log_swallowed_exception("analyze_js_endpoints", exc)
 
-    return list(
-        {
-            urllib.parse.urlparse(e).path
-            for e in endpoints
-            if e.startswith(("/", "http"))
-        }
-    )
+    return list({urllib.parse.urlparse(e).path for e in endpoints if e.startswith(("/", "http"))})

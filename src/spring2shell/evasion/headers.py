@@ -60,6 +60,7 @@ def _agents() -> list[str]:
 # Header generation
 # ---------------------------------------------------------------------------
 
+
 def get_random_headers() -> dict[str, str]:
     """Build a randomised, fingerprint-resistant header dictionary."""
     headers: dict[str, str] = {
@@ -85,6 +86,7 @@ def get_random_headers() -> dict[str, str]:
 # ---------------------------------------------------------------------------
 # Protocol hopping
 # ---------------------------------------------------------------------------
+
 
 def protocol_hopper(url: str) -> list[str]:
     """Return HTTP and HTTPS variants of *url*.

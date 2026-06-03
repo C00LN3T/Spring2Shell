@@ -13,7 +13,6 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 
 from spring2shell.utils.logging import log_event
@@ -111,9 +110,7 @@ def decrypt_report(encrypted_path: str | Path, *, output_path: str | Path | None
     try:
         plaintext = fernet.decrypt(src.read_bytes())
     except InvalidToken as exc:
-        raise ValueError(
-            "Decryption failed — wrong key or corrupted file."
-        ) from exc
+        raise ValueError("Decryption failed — wrong key or corrupted file.") from exc
 
     if output_path:
         dst = Path(output_path)

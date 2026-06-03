@@ -28,7 +28,6 @@ import requests
 from spring2shell.utils.logging import log_event, log_swallowed_exception
 from spring2shell.utils.network import ssl_verify
 
-
 # ---------------------------------------------------------------------------
 # OOB config
 # ---------------------------------------------------------------------------
@@ -69,12 +68,7 @@ def generate_oob_host() -> str:
     token = hashlib.sha256(os.urandom(16)).hexdigest()[:12]
 
     if _oob_server:
-        base = (
-            _oob_server
-            .rstrip("/")
-            .replace("https://", "")
-            .replace("http://", "")
-        )
+        base = _oob_server.rstrip("/").replace("https://", "").replace("http://", "")
         return f"{token}.{base}"
 
     # Fallback: use public OOB service
@@ -95,8 +89,7 @@ def poll_oob(oob_host: str, wait_seconds: int = 5) -> bool:
     if not _oob_server:
         log_event(
             logging.DEBUG,
-            f"OOB poll skipped (no server configured). "
-            f"Manually check {oob_host} for interactions.",
+            f"OOB poll skipped (no server configured). Manually check {oob_host} for interactions.",
         )
         return False
 
@@ -122,8 +115,7 @@ def poll_oob(oob_host: str, wait_seconds: int = 5) -> bool:
             if interactions:
                 log_event(
                     logging.WARNING,
-                    f"OOB callback CONFIRMED for {oob_host}: "
-                    f"{len(interactions)} interaction(s)",
+                    f"OOB callback CONFIRMED for {oob_host}: {len(interactions)} interaction(s)",
                 )
                 return True
     except Exception as exc:

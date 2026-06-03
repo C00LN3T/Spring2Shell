@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+
 import requests
 
 from spring2shell.utils.logging import log_event, log_swallowed_exception
@@ -68,7 +68,10 @@ def upload_to_defectdojo(
                 verify=ssl_verify(),
             )
             if resp.status_code in (200, 201):
-                log_event(logging.INFO, f"Successfully uploaded report to DefectDojo. Engagement ID: {engagement_id}")
+                log_event(
+                    logging.INFO,
+                    f"Successfully uploaded report to DefectDojo. Engagement ID: {engagement_id}",
+                )
                 return True
             else:
                 log_event(

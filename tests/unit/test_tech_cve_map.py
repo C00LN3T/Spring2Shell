@@ -1,7 +1,8 @@
 """Unit tests for tech_cve_map — A1: tech-stack-aware CVE selection."""
+
 from __future__ import annotations
 
-from spring2shell.discovery.fingerprint import get_cves_for_fingerprints, TECH_CVE_MAP
+from spring2shell.discovery.fingerprint import TECH_CVE_MAP, get_cves_for_fingerprints
 
 
 class TestGetCvesForFingerprints:

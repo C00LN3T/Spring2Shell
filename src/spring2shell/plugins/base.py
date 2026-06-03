@@ -4,8 +4,10 @@ Base class for dynamic scanner and exploitation plugins in spring2shell.
 
 from __future__ import annotations
 
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import requests
 
 
 class BasePlugin:
@@ -69,7 +71,9 @@ class BasePlugin:
         By default, runs the legacy synchronous check() method in a separate thread.
         """
         import asyncio
+
         import requests
+
         from spring2shell.core.session import create_stealth_session
 
         if isinstance(session, requests.Session):
@@ -99,7 +103,9 @@ class BasePlugin:
         By default, runs the legacy synchronous exploit() method in a separate thread.
         """
         import asyncio
+
         import requests
+
         from spring2shell.core.session import create_stealth_session
 
         if isinstance(session, requests.Session):
@@ -117,4 +123,3 @@ class BasePlugin:
 
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _run_sync)
-

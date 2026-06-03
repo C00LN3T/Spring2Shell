@@ -8,12 +8,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 import requests
 
 
-def _make_response(text: str = "", status: int = 200,
-                   content_type: str = "application/json") -> MagicMock:
+def _make_response(
+    text: str = "", status: int = 200, content_type: str = "application/json"
+) -> MagicMock:
     r = MagicMock(spec=requests.Response)
     r.text = text
     r.status_code = status
@@ -24,6 +24,7 @@ def _make_response(text: str = "", status: int = 200,
 # ---------------------------------------------------------------------------
 # aggressive_waf_bypass
 # ---------------------------------------------------------------------------
+
 
 class TestAggressiveWafBypass:
     def _patched_session(self, status: int = 200, text: str = "ok"):
@@ -38,10 +39,11 @@ class TestAggressiveWafBypass:
         from spring2shell.core.evasion_runner import aggressive_waf_bypass
 
         session = self._patched_session(200, "normal output")
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch("time.sleep"):
             result = aggressive_waf_bypass("http://t.example", "http://t.example/api", "id")
         assert isinstance(result, list)
 
@@ -49,10 +51,11 @@ class TestAggressiveWafBypass:
         from spring2shell.core.evasion_runner import aggressive_waf_bypass
 
         session = self._patched_session(403)
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch("time.sleep"):
             result = aggressive_waf_bypass("http://t.example", "http://t.example/api")
         assert result == []
 
@@ -60,10 +63,11 @@ class TestAggressiveWafBypass:
         from spring2shell.core.evasion_runner import aggressive_waf_bypass
 
         session = self._patched_session(200, "uid=0(root) gid=0(root)")
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch("time.sleep"):
             result = aggressive_waf_bypass("http://t.example", "http://t.example/api", "id")
         # Should return early after first technique with 200 + output indicators
         assert len(result) >= 1
@@ -74,9 +78,11 @@ class TestAggressiveWafBypass:
         from spring2shell.core.evasion_runner import aggressive_waf_bypass
 
         session = self._patched_session(200)
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=True):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=True
+        ):
             result = aggressive_waf_bypass("http://t.example", "http://t.example/api")
         assert result == []
 
@@ -88,10 +94,11 @@ class TestAggressiveWafBypass:
         session.post.side_effect = ConnectionError("refused")
         session.get.side_effect = ConnectionError("refused")
 
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch("time.sleep"):
             result = aggressive_waf_bypass("http://t.example", "http://t.example/api")
         assert isinstance(result, list)
 
@@ -99,6 +106,7 @@ class TestAggressiveWafBypass:
 # ---------------------------------------------------------------------------
 # find_working_endpoint
 # ---------------------------------------------------------------------------
+
 
 class TestFindWorkingEndpoint:
     def _api_session(self):
@@ -114,11 +122,13 @@ class TestFindWorkingEndpoint:
 
         session = self._api_session()
         mock_endpoints = ["/api/graphql", "/graphql"]
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("spring2shell.discovery.endpoints.load_endpoints", return_value=mock_endpoints), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch(
+            "spring2shell.discovery.endpoints.load_endpoints", return_value=mock_endpoints
+        ), patch("time.sleep"):
             result = find_working_endpoint("http://t.example", limit=2)
         assert isinstance(result, list)
 
@@ -128,12 +138,14 @@ class TestFindWorkingEndpoint:
         # 10 endpoints available, limit=3
         session = self._api_session()
         many_endpoints = [f"/ep{i}" for i in range(10)]
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("spring2shell.discovery.endpoints.load_endpoints", return_value=many_endpoints), \
-             patch("time.sleep"):
-            result = find_working_endpoint("http://t.example", limit=3)
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch(
+            "spring2shell.discovery.endpoints.load_endpoints", return_value=many_endpoints
+        ), patch("time.sleep"):
+            find_working_endpoint("http://t.example", limit=3)
         # At most 3 endpoints were probed (GET + POST each)
         assert session.get.call_count <= 3
 
@@ -144,11 +156,13 @@ class TestFindWorkingEndpoint:
         session.get.side_effect = ConnectionError("refused")
         session.post.side_effect = ConnectionError("refused")
 
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("spring2shell.discovery.endpoints.load_endpoints", return_value=["/api"]), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch("spring2shell.discovery.endpoints.load_endpoints", return_value=["/api"]), patch(
+            "time.sleep"
+        ):
             result = find_working_endpoint("http://t.example")
         assert isinstance(result, list)  # errors swallowed, empty list returned
 
@@ -156,11 +170,13 @@ class TestFindWorkingEndpoint:
         from spring2shell.core.evasion_runner import find_working_endpoint
 
         session = self._api_session()
-        with patch("spring2shell.core.evasion_runner.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), \
-             patch("spring2shell.core.evasion_runner.is_interrupted", return_value=False), \
-             patch("spring2shell.discovery.endpoints.load_endpoints", return_value=["/api/graphql"]), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.evasion_runner.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.evasion_runner.get_random_headers", return_value={}), patch(
+            "spring2shell.core.evasion_runner.is_interrupted", return_value=False
+        ), patch(
+            "spring2shell.discovery.endpoints.load_endpoints", return_value=["/api/graphql"]
+        ), patch("time.sleep"):
             result = find_working_endpoint("http://t.example", limit=1)
         for ep in result:
             assert "url" in ep

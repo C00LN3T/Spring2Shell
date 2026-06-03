@@ -19,13 +19,24 @@ _SUBDOMAIN_CACHE: dict[str, list[str]] = {}
 # Markers searched in response body and headers
 _TECH_MARKERS = [
     # JavaScript frameworks
-    "next.js", "react", "angular", "vue",
+    "next.js",
+    "react",
+    "angular",
+    "vue",
     # Backend / Java
-    "spring", "spring-boot", "spring-boot-3", "actuator", "webflux",
+    "spring",
+    "spring-boot",
+    "spring-boot-3",
+    "actuator",
+    "webflux",
     # API layers
-    "graphql", "apollo", "grpc",
+    "graphql",
+    "apollo",
+    "grpc",
     # Java app servers
-    "apache tomcat", "undertow", "jetty",
+    "apache tomcat",
+    "undertow",
+    "jetty",
     # Middleware
     "activemq",
     # Log4j indicators in headers/pages
@@ -33,17 +44,21 @@ _TECH_MARKERS = [
     # Apache commons
     "commons-text",
     # Hosting
-    "vercel", "express",
+    "vercel",
+    "express",
     # Other
-    "php-cgi", "struts", "jenkins", "elasticsearch",
+    "php-cgi",
+    "struts",
+    "jenkins",
+    "elasticsearch",
 ]
 
 # Additional header-based markers: header name → tech tag
 _HEADER_MARKERS: dict[str, str] = {
-    "x-powered-by":   None,       # inspect value
-    "x-nextjs-page":  "next.js",
-    "x-amz-cf-id":    "cloudfront",
-    "server":         None,        # inspect value (Tomcat, Jetty, etc.)
+    "x-powered-by": None,  # inspect value
+    "x-nextjs-page": "next.js",
+    "x-amz-cf-id": "cloudfront",
+    "server": None,  # inspect value (Tomcat, Jetty, etc.)
     "x-application-context": "spring-boot",
 }
 
@@ -52,36 +67,36 @@ _HEADER_VALUE_PATTERNS: list[tuple[str, str]] = [
     ("x-powered-by", "next.js"),
     ("x-powered-by", "express"),
     ("x-powered-by", "php"),
-    ("server",        "tomcat"),
-    ("server",        "jetty"),
-    ("server",        "undertow"),
-    ("server",        "apache"),
-    ("server",        "nginx"),
-    ("server",        "iis"),
+    ("server", "tomcat"),
+    ("server", "jetty"),
+    ("server", "undertow"),
+    ("server", "apache"),
+    ("server", "nginx"),
+    ("server", "iis"),
 ]
 
 # ─── Tech → CVE priority map ──────────────────────────────────────────────────
 TECH_CVE_MAP: dict[str, list[str]] = {
-    "spring":         ["CVE-2025-55182", "CVE-2022-22965", "CVE-2024-22243"],
-    "spring-boot":    ["CVE-2025-55182", "CVE-2022-22965", "CVE-2024-22243"],
-    "spring-boot-3":  ["CVE-2025-55182", "CVE-2024-38816", "CVE-2024-22243"],
-    "actuator":       ["CVE-2025-55182", "CVE-2022-22965"],
-    "webflux":        ["CVE-2024-38816", "CVE-2025-55182"],
-    "graphql":        ["CVE-2025-55182", "CVE-2025-66478"],
-    "apollo":         ["CVE-2025-55182", "CVE-2025-66478"],
-    "next.js":        ["CVE-2025-55182", "CVE-2025-66478"],
-    "react":          ["CVE-2025-55182", "CVE-2025-66478"],
-    "angular":        ["CVE-2025-55182"],
-    "vue":            ["CVE-2025-55182"],
-    "activemq":       ["CVE-2023-46604"],
-    "log4j":          ["CVE-2021-44228"],
-    "commons-text":   ["CVE-2022-42889"],
-    "struts":         ["CVE-2022-42889"],    # OGNL via Text4Shell
-    "php-cgi":        ["CVE-2024-4577"],
-    "jenkins":        ["CVE-2021-44228"],   # Log4j
-    "elasticsearch":  ["CVE-2021-44228"],   # Log4j
-    "express":        ["CVE-2025-55182"],
-    "vercel":         ["CVE-2025-55182", "CVE-2025-66478"],
+    "spring": ["CVE-2025-55182", "CVE-2022-22965", "CVE-2024-22243"],
+    "spring-boot": ["CVE-2025-55182", "CVE-2022-22965", "CVE-2024-22243"],
+    "spring-boot-3": ["CVE-2025-55182", "CVE-2024-38816", "CVE-2024-22243"],
+    "actuator": ["CVE-2025-55182", "CVE-2022-22965"],
+    "webflux": ["CVE-2024-38816", "CVE-2025-55182"],
+    "graphql": ["CVE-2025-55182", "CVE-2025-66478"],
+    "apollo": ["CVE-2025-55182", "CVE-2025-66478"],
+    "next.js": ["CVE-2025-55182", "CVE-2025-66478"],
+    "react": ["CVE-2025-55182", "CVE-2025-66478"],
+    "angular": ["CVE-2025-55182"],
+    "vue": ["CVE-2025-55182"],
+    "activemq": ["CVE-2023-46604"],
+    "log4j": ["CVE-2021-44228"],
+    "commons-text": ["CVE-2022-42889"],
+    "struts": ["CVE-2022-42889"],  # OGNL via Text4Shell
+    "php-cgi": ["CVE-2024-4577"],
+    "jenkins": ["CVE-2021-44228"],  # Log4j
+    "elasticsearch": ["CVE-2021-44228"],  # Log4j
+    "express": ["CVE-2025-55182"],
+    "vercel": ["CVE-2025-55182", "CVE-2025-66478"],
 }
 
 # Ordered priority: CVEs in this list appear first when sorting
@@ -160,8 +175,14 @@ def prioritize_endpoints(endpoints: list[str], fingerprints: list[str]) -> list[
     if any(fp in ("graphql", "apollo", "next.js", "react") for fp in fingerprints):
         priority_prefixes += ["/graphql", "/api/graphql", "/v1/graphql", "/__graphql"]
     if any(fp in ("spring", "spring-boot", "actuator") for fp in fingerprints):
-        priority_prefixes += ["/actuator", "/actuator/env", "/actuator/beans",
-                              "/api/", "/api/v1/", "/api/v2/"]
+        priority_prefixes += [
+            "/actuator",
+            "/actuator/env",
+            "/actuator/beans",
+            "/api/",
+            "/api/v1/",
+            "/api/v2/",
+        ]
     if "activemq" in fingerprints:
         priority_prefixes += ["/admin/", "/api/jolokia/", "/hawtio/", "/console/"]
     if "webflux" in fingerprints:
@@ -214,8 +235,11 @@ def tech_fingerprint(target_url: str) -> list[str]:
         # Spring Boot version detection
         if "spring-boot" in fingerprints:
             # Detect v3 from X-Application-Context or body version strings
-            if ("spring-boot: 3" in text or "spring.boot.version=3" in text
-                    or "org.springframework.boot:spring-boot:3" in text):
+            if (
+                "spring-boot: 3" in text
+                or "spring.boot.version=3" in text
+                or "org.springframework.boot:spring-boot:3" in text
+            ):
                 fingerprints.append("spring-boot-3")
 
         fingerprints = list(dict.fromkeys(fingerprints))  # deduplicate preserving order
@@ -256,9 +280,7 @@ def enumerate_subdomains(target_url: str) -> list[str]:
         candidate = f"{prefix}.{hostname}"
         for variant in protocol_hopper(candidate):
             try:
-                resp = requests.head(
-                    variant, timeout=2, verify=ssl_verify(), allow_redirects=True
-                )
+                resp = requests.head(variant, timeout=2, verify=ssl_verify(), allow_redirects=True)
                 if resp.status_code < 500:
                     discovered.append(variant)
             except Exception as exc:

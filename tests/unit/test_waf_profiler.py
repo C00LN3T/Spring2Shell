@@ -11,7 +11,6 @@ from spring2shell.core.waf_profiler import profile_waf
 
 
 class TestWAFProfiler(unittest.TestCase):
-
     @patch("spring2shell.core.waf_profiler.create_stealth_session")
     @patch("spring2shell.core.waf_profiler.get_random_headers")
     def test_profile_waf_normal_flow(self, mock_headers, mock_create_session):

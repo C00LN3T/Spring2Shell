@@ -11,7 +11,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from spring2shell.utils.network import RETRY_PROFILES, TIMEOUT_PROFILES, ssl_verify
+from spring2shell.utils.network import RETRY_PROFILES, ssl_verify
 
 
 def create_stealth_session(profile: str = "default") -> requests.Session:
@@ -29,7 +29,8 @@ def create_stealth_session(profile: str = "default") -> requests.Session:
     """
     # Short-circuit to dry-run session if enabled
     try:
-        from spring2shell.utils.dry_run import is_dry_run, DryRunSession
+        from spring2shell.utils.dry_run import DryRunSession, is_dry_run
+
         if is_dry_run():
             return DryRunSession()  # type: ignore[return-value]
     except ImportError:
@@ -58,6 +59,7 @@ def create_stealth_session(profile: str = "default") -> requests.Session:
     # Apply auth credentials and proxy (no-op if not configured)
     try:
         from spring2shell.utils.auth import apply_auth
+
         apply_auth(session)
     except ImportError:
         pass
@@ -75,4 +77,3 @@ def apply_stealth_delay(probability: float = 0.7, min_s: float = 0.1, max_s: flo
     """
     if random.random() < probability:
         time.sleep(random.uniform(min_s, max_s))
-

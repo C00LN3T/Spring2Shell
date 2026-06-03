@@ -5,13 +5,15 @@ Plugin for CVE-2025-66478: Spring GraphQL SpEL Injection.
 from __future__ import annotations
 
 import random
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.evasion.waf_engine import waf_engine
 from spring2shell.plugins.base import BasePlugin
 from spring2shell.utils.auth import audit_log, rate_limit_acquire
+
+if TYPE_CHECKING:
+    import requests
 
 
 class CVE_2025_66478_Plugin(BasePlugin):
@@ -76,10 +78,12 @@ class CVE_2025_66478_Plugin(BasePlugin):
         headers: dict[str, str],
     ) -> dict[str, Any] | None:
         import aiohttp
+
         if not isinstance(session, aiohttp.ClientSession):
             return await super().async_check(session, target, endpoint, headers)
 
         import random
+
         from spring2shell.utils.async_network import send_async_request
         from spring2shell.utils.auth import audit_log
 
@@ -120,7 +124,6 @@ class CVE_2025_66478_Plugin(BasePlugin):
                 except Exception:
                     continue
         return None
-
 
     def exploit(
         self,

@@ -12,22 +12,22 @@ import logging
 import time
 import urllib.parse
 from pathlib import Path
-from typing import Any
-
-import requests
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.core.session import create_stealth_session
 from spring2shell.evasion.headers import get_random_headers
 from spring2shell.utils.auth import apply_auth, audit_log, rate_limit_acquire
 from spring2shell.utils.logging import log_event, log_swallowed_exception
-from spring2shell.utils.network import ssl_verify
 from spring2shell.utils.signals import is_interrupted
 
+if TYPE_CHECKING:
+    import requests
 
 # ---------------------------------------------------------------------------
 # Payload loader
 # ---------------------------------------------------------------------------
+
 
 def _load_ssrf_payloads() -> dict[str, Any]:
     path = Path(__file__).parents[3] / "data" / "payloads" / "ssrf_payloads.json"
@@ -45,30 +45,81 @@ def _load_ssrf_payloads() -> dict[str, Any]:
 # Indicators in response body suggesting SSRF success
 _SSRF_INDICATORS = [
     # AWS metadata
-    "ami-id", "instance-id", "security-credentials",
-    "iam/info", "identity-document",
+    "ami-id",
+    "instance-id",
+    "security-credentials",
+    "iam/info",
+    "identity-document",
     # GCP metadata
-    "computeMetadata", "project-id", "service-accounts",
+    "computeMetadata",
+    "project-id",
+    "service-accounts",
     # Azure
-    "azure", "msi/token",
+    "azure",
+    "msi/token",
     # Redis
-    "+PONG", "-NOAUTH", "$", "*",
+    "+PONG",
+    "-NOAUTH",
+    "$",
+    "*",
     # K8s
-    "namespaces", "apiVersion", "kind", "ServiceAccount",
+    "namespaces",
+    "apiVersion",
+    "kind",
+    "ServiceAccount",
     # Docker
-    "\"Id\":", "\"Names\":", "\"Image\":",
+    '"Id":',
+    '"Names":',
+    '"Image":',
     # File content
-    "root:x:", "/bin/bash", "/bin/sh",
+    "root:x:",
+    "/bin/bash",
+    "/bin/sh",
     # Elasticsearch
-    "cluster_name", "\"status\"", "\"indices\"",
+    "cluster_name",
+    '"status"',
+    '"indices"',
 ]
 
 _SSRF_PARAM_NAMES = [
-    "url", "target", "redirect", "redirectUrl", "next", "dest", "destination",
-    "host", "server", "to", "out", "image", "src", "source", "uri", "path",
-    "resource", "forward", "href", "link", "return", "returnUrl", "callback",
-    "proxy", "endpoint", "fetch", "load", "page", "site", "data", "feed",
-    "webhook", "remote", "import", "export", "open", "ref", "reference",
+    "url",
+    "target",
+    "redirect",
+    "redirectUrl",
+    "next",
+    "dest",
+    "destination",
+    "host",
+    "server",
+    "to",
+    "out",
+    "image",
+    "src",
+    "source",
+    "uri",
+    "path",
+    "resource",
+    "forward",
+    "href",
+    "link",
+    "return",
+    "returnUrl",
+    "callback",
+    "proxy",
+    "endpoint",
+    "fetch",
+    "load",
+    "page",
+    "site",
+    "data",
+    "feed",
+    "webhook",
+    "remote",
+    "import",
+    "export",
+    "open",
+    "ref",
+    "reference",
 ]
 
 
@@ -80,16 +131,17 @@ def _check_ssrf_response(resp: requests.Response, payload_url: str) -> str | Non
             return f"SSRF indicator '{indicator}' found when targeting {payload_url}"
     # Also check status code anomalies — a 200 on a metadata URL is suspicious
     if resp.status_code == 200 and any(
-        cloud in payload_url for cloud in ["169.254.169.254", "metadata.google", "kubernetes.default"]
-    ):
-        if len(text) > 10:
-            return f"Suspicious 200 OK from cloud metadata request to {payload_url}"
+        cloud in payload_url
+        for cloud in ["169.254.169.254", "metadata.google", "kubernetes.default"]
+    ) and len(text) > 10:
+        return f"Suspicious 200 OK from cloud metadata request to {payload_url}"
     return None
 
 
 # ---------------------------------------------------------------------------
 # Main SSRF scan function
 # ---------------------------------------------------------------------------
+
 
 def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[str, Any]]:
     """Probe *target_url* for SSRF vulnerabilities.
@@ -112,7 +164,7 @@ def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
 
     # Collect all payload URLs
     all_payloads: list[str] = []
-    for category, data in ssrf_db.items():
+    for _category, data in ssrf_db.items():
         if isinstance(data, dict) and "payloads" in data:
             all_payloads.extend(data["payloads"])
 
@@ -133,9 +185,15 @@ def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
     # Default endpoints to test
     if not endpoints:
         endpoints = [
-            "/api/v1/fetch", "/api/fetch", "/api/proxy",
-            "/api/v1/proxy", "/api/url", "/fetch",
-            "/proxy", "/redirect", "/v1/webhook",
+            "/api/v1/fetch",
+            "/api/fetch",
+            "/api/proxy",
+            "/api/v1/proxy",
+            "/api/url",
+            "/fetch",
+            "/proxy",
+            "/redirect",
+            "/v1/webhook",
         ]
 
     for ep in endpoints:
@@ -154,8 +212,7 @@ def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
                 rate_limit_acquire()
                 probe_url = f"{full_url}?{param}={urllib.parse.quote(ssrf_payload)}"
                 try:
-                    resp = session.get(probe_url, headers=headers, timeout=8,
-                                       allow_redirects=False)
+                    resp = session.get(probe_url, headers=headers, timeout=8, allow_redirects=False)
                     audit_log("GET", probe_url, resp.status_code, ssrf_payload, "ssrf_probe")
                     evidence = _check_ssrf_response(resp, ssrf_payload)
                     if evidence:
@@ -172,7 +229,9 @@ def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
                             status_code=resp.status_code,
                         )
                         findings.append(finding)
-                        log_event(logging.WARNING, "SSRF candidate", url=probe_url, evidence=evidence)
+                        log_event(
+                            logging.WARNING, "SSRF candidate", url=probe_url, evidence=evidence
+                        )
                 except Exception as exc:
                     log_swallowed_exception(f"ssrf-scan GET {probe_url}", exc)
 
@@ -182,8 +241,9 @@ def ssrf_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
                 post_body = json.dumps({param: ssrf_payload})
                 headers["Content-Type"] = "application/json"
                 try:
-                    resp = session.post(full_url, data=post_body, headers=headers, timeout=8,
-                                        allow_redirects=False)
+                    resp = session.post(
+                        full_url, data=post_body, headers=headers, timeout=8, allow_redirects=False
+                    )
                     audit_log("POST", full_url, resp.status_code, post_body, "ssrf_probe")
                     evidence = _check_ssrf_response(resp, ssrf_payload)
                     if evidence:

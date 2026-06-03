@@ -14,7 +14,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -26,14 +25,15 @@ import requests
 
 from spring2shell.utils.logging import log_event
 
-
 # ---------------------------------------------------------------------------
 # Auth config
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class AuthConfig:
     """Holds all authentication credentials for the current session."""
+
     bearer: str | None = None
     basic: tuple[str, str] | None = None
     cookies: dict[str, str] = field(default_factory=dict)
@@ -148,6 +148,7 @@ def apply_auth(session: requests.Session) -> None:
 # Rate limiter (token bucket)
 # ---------------------------------------------------------------------------
 
+
 class RateLimiter:
     """Thread-safe token-bucket rate limiter.
 
@@ -182,6 +183,7 @@ class RateLimiter:
     async def async_acquire(self) -> None:
         """Asynchronously acquire a token without blocking the event loop."""
         import asyncio
+
         if self.rps <= 0:
             return
         with self._lock:
@@ -231,6 +233,7 @@ async def async_rate_limit_acquire() -> None:
 # Audit logger (JSONL)
 # ---------------------------------------------------------------------------
 
+
 class AuditLogger:
     """Append-only JSONL audit trail for every HTTP request.
 
@@ -261,9 +264,8 @@ class AuditLogger:
             "result": result,
         }
         line = json.dumps(record, ensure_ascii=False)
-        with self._lock:
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+        with self._lock, self.path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
 
 
 # Module-level audit logger (None = disabled)
@@ -282,8 +284,9 @@ def configure_audit(args: Any) -> None:
         _audit_logger = AuditLogger(path)
 
 
-def audit_log(method: str, url: str, status: int | None,
-              payload: str | None = None, result: str = "") -> None:
+def audit_log(
+    method: str, url: str, status: int | None, payload: str | None = None, result: str = ""
+) -> None:
     """Write one entry to the audit log if enabled."""
     if _audit_logger:
         _audit_logger.log_request(method, url, status, payload, result)
@@ -292,6 +295,7 @@ def audit_log(method: str, url: str, status: int | None,
 # ---------------------------------------------------------------------------
 # Webhook notifications
 # ---------------------------------------------------------------------------
+
 
 def send_webhook(finding: dict[str, Any]) -> None:
     """POST a JSON notification to the configured webhook URL.
@@ -302,6 +306,7 @@ def send_webhook(finding: dict[str, Any]) -> None:
     if not url:
         return
     from spring2shell.utils.network import ssl_verify
+
     payload = {
         "text": f"🚨 Confirmed RCE: {finding.get('url', 'N/A')}",
         "severity": "critical",

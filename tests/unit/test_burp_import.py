@@ -1,8 +1,6 @@
 """Unit tests for burp_import.py — B1: Burp Suite target import."""
-from __future__ import annotations
 
-from pathlib import Path
-import pytest
+from __future__ import annotations
 
 from spring2shell.utils.burp_import import (
     _parse_burp_xml,
@@ -10,7 +8,6 @@ from spring2shell.utils.burp_import import (
     _to_base_urls,
     load_targets,
 )
-
 
 _BURP_XML = """<?xml version="1.0" ?>
 <!DOCTYPE items [<!ENTITY xxe SYSTEM "">]>
@@ -57,9 +54,9 @@ class TestParseBurpXml:
 </items>"""
         urls = _parse_burp_xml(xml)
         # CDATA markers are removed — the actual URL should be present
-        assert any("graphql" in u and "target.example" in u for u in urls), \
+        assert any("graphql" in u and "target.example" in u for u in urls), (
             f"Expected URL with 'graphql' in parsed URLs, got: {urls}"
-
+        )
 
 
 class TestParsePlainTxt:

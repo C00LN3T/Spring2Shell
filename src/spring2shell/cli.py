@@ -25,15 +25,15 @@ from spring2shell import __version__
 from spring2shell.utils.network import configure_runtime
 from spring2shell.utils.signals import register as register_signals
 
-
 # ---------------------------------------------------------------------------
 # Sub-command handlers
 # ---------------------------------------------------------------------------
 
+
 def _cmd_safe_audit(args: argparse.Namespace) -> int:
     from spring2shell.audit.safe_audit import run_safe_audit
-    from spring2shell.core.reporter import print_summary, write_report
     from spring2shell.core.html_reporter import generate_html_report
+    from spring2shell.core.reporter import print_summary, write_report
 
     findings = run_safe_audit(args.target)
     print_summary(findings)
@@ -81,10 +81,11 @@ def _cmd_direct(args: argparse.Namespace) -> int:
 
 
 def _cmd_scan(args: argparse.Namespace) -> int:
-    from spring2shell.core.scanner import bulk_scan
-    from spring2shell.core.checkpoint import Checkpoint
-    from pathlib import Path
     import json
+    from pathlib import Path
+
+    from spring2shell.core.checkpoint import Checkpoint
+    from spring2shell.core.scanner import bulk_scan
 
     cp = Checkpoint(args.output_prefix) if getattr(args, "resume", False) else None
 
@@ -108,12 +109,16 @@ def _cmd_scan(args: argparse.Namespace) -> int:
             formats.append("html")
 
         from spring2shell.core.reporter import write_formatted_reports
-        written = write_formatted_reports(findings, f"{args.output_prefix}_combined", formats=formats)
+
+        written = write_formatted_reports(
+            findings, f"{args.output_prefix}_combined", formats=formats
+        )
         for fmt, path in written.items():
             print(f"[+] {fmt.upper()} report written: {path}")
 
     if getattr(args, "encrypt_reports", False):
         from spring2shell.core.crypto import encrypt_report
+
         if combined.exists():
             enc_path = encrypt_report(combined)
             print(f"[+] Report encrypted: {enc_path}")
@@ -133,9 +138,10 @@ def _cmd_cve_scan(args: argparse.Namespace) -> int:
 
 
 def _cmd_profile_waf(args: argparse.Namespace) -> int:
-    from spring2shell.core.waf_profiler import profile_waf, print_waf_profile
     import json
     from pathlib import Path
+
+    from spring2shell.core.waf_profiler import print_waf_profile, profile_waf
 
     report = profile_waf(args.target)
     print_waf_profile(report)
@@ -148,11 +154,10 @@ def _cmd_profile_waf(args: argparse.Namespace) -> int:
     return 0
 
 
-
 def _cmd_ssrf_scan(args: argparse.Namespace) -> int:
-    from spring2shell.core.ssrf import ssrf_scan
-    from spring2shell.core.reporter import print_summary, write_report
     from spring2shell.core.html_reporter import generate_html_report
+    from spring2shell.core.reporter import print_summary, write_report
+    from spring2shell.core.ssrf import ssrf_scan
 
     findings = ssrf_scan(args.target)
     print_summary(findings)
@@ -166,9 +171,9 @@ def _cmd_ssrf_scan(args: argparse.Namespace) -> int:
 
 
 def _cmd_ssti_scan(args: argparse.Namespace) -> int:
-    from spring2shell.core.ssti import ssti_scan
-    from spring2shell.core.reporter import print_summary, write_report
     from spring2shell.core.html_reporter import generate_html_report
+    from spring2shell.core.reporter import print_summary, write_report
+    from spring2shell.core.ssti import ssti_scan
 
     findings = ssti_scan(args.target)
     print_summary(findings)
@@ -182,7 +187,7 @@ def _cmd_ssti_scan(args: argparse.Namespace) -> int:
 
 
 def _cmd_encrypt(args: argparse.Namespace) -> int:
-    from spring2shell.core.crypto import encrypt_report, decrypt_report
+    from spring2shell.core.crypto import decrypt_report, encrypt_report
 
     if args.action == "encrypt":
         out = encrypt_report(args.file, remove_original=getattr(args, "remove_original", False))
@@ -197,6 +202,7 @@ def _cmd_nuclei_export(args: argparse.Namespace) -> int:
     """Export scan findings as Nuclei v3 YAML templates."""
     import json
     from pathlib import Path
+
     from spring2shell.utils.nuclei_export import export_templates
 
     report_path = Path(args.report_file)
@@ -222,6 +228,7 @@ def _cmd_defectdojo_upload(args: argparse.Namespace) -> int:
     """Upload scan findings to DefectDojo."""
     import os
     from pathlib import Path
+
     from spring2shell.utils.defectdojo import upload_to_defectdojo
 
     report_path = Path(args.report_file)
@@ -236,7 +243,9 @@ def _cmd_defectdojo_upload(args: argparse.Namespace) -> int:
 
     if not url or not api_key or not engagement_id:
         print("[!] Missing required DefectDojo parameters (url, api_key, engagement_id).")
-        print("    Pass them as CLI arguments or set environment variables: DEFECTDOJO_URL, DEFECTDOJO_API_KEY, DEFECTDOJO_ENGAGEMENT_ID")
+        print(
+            "    Pass them as CLI arguments or set environment variables: DEFECTDOJO_URL, DEFECTDOJO_API_KEY, DEFECTDOJO_ENGAGEMENT_ID"
+        )
         return 1
 
     success = upload_to_defectdojo(
@@ -253,12 +262,11 @@ def _cmd_defectdojo_upload(args: argparse.Namespace) -> int:
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
-
     """Verify a potential RCE: echo-marker test + optional blind (time-delay + DNS)."""
-    from spring2shell.core.verifier import check_real_rce, blind_rce_test
+    from spring2shell.core.verifier import blind_rce_test, check_real_rce
 
     endpoint = getattr(args, "endpoint", None) or (args.target.rstrip("/") + "/api/graphql")
-    method   = getattr(args, "method", "POST")
+    method = getattr(args, "method", "POST")
 
     print(f"[+] Verifying RCE on {args.target}")
     print(f"[+] Endpoint: {endpoint}")
@@ -273,27 +281,32 @@ def _cmd_verify(args: argparse.Namespace) -> int:
 def _cmd_exploit(args: argparse.Namespace) -> int:
     """Load a JSON report and drive interactive exploitation."""
     from spring2shell.core.report_loader import load_report_and_exploit
+
     load_report_and_exploit(args.report_file)
     return 0
 
 
-def _cmd_menu(args: argparse.Namespace) -> int:  # noqa: ARG001
+def _cmd_menu(args: argparse.Namespace) -> int:
     """Launch the 13-item interactive TUI menu."""
     _interactive_menu()
     return 0
 
 
-def _interactive_menu() -> None:  # noqa: C901
+def _interactive_menu() -> None:
     """13-item interactive TUI — identical in spirit to the original monolith menu."""
     import sys
+
+    from spring2shell.audit.log_audit import safe_log_audit
+    from spring2shell.audit.safe_audit import safe_full_audit
     from spring2shell.core.exploiter import (
-        direct_exploit, exploit_vulnerability, find_working_endpoint, cve_specific_scan,
+        cve_specific_scan,
+        direct_exploit,
+        exploit_vulnerability,
+        find_working_endpoint,
     )
     from spring2shell.core.report_loader import load_report_and_exploit
     from spring2shell.core.reporter import print_summary
-    from spring2shell.core.verifier import check_real_rce, blind_rce_test
-    from spring2shell.audit.safe_audit import safe_full_audit
-    from spring2shell.audit.log_audit import safe_log_audit
+    from spring2shell.core.verifier import blind_rce_test, check_real_rce
 
     print("\n" + "=" * 70)
     print("ULTIMATE REACT4SHELL / REACT2SHELL FRAMEWORK")
@@ -331,6 +344,7 @@ def _interactive_menu() -> None:  # noqa: C901
             threads = int(threads_s) if threads_s.isdigit() and int(threads_s) > 0 else 5
             if targets_file and output_prefix:
                 from spring2shell.core.scanner import bulk_scan
+
                 bulk_scan(targets_file, output_prefix, threads=threads)
             else:
                 print("[!] Targets file and output prefix required")
@@ -358,10 +372,18 @@ def _interactive_menu() -> None:  # noqa: C901
                     sel = _input("Select [number/all]: ").lower()
                     if sel == "all":
                         for ep in working:
-                            print_summary(exploit_vulnerability(target, ep["url"], method=ep["method"], command=cmd))
+                            print_summary(
+                                exploit_vulnerability(
+                                    target, ep["url"], method=ep["method"], command=cmd
+                                )
+                            )
                     elif sel.isdigit():
                         ep = working[int(sel) - 1]
-                        print_summary(exploit_vulnerability(target, ep["url"], method=ep["method"], command=cmd))
+                        print_summary(
+                            exploit_vulnerability(
+                                target, ep["url"], method=ep["method"], command=cmd
+                            )
+                        )
                 else:
                     print("[-] No endpoints found — running direct_exploit...")
                     print_summary(direct_exploit(target, command=cmd))
@@ -369,8 +391,10 @@ def _interactive_menu() -> None:  # noqa: C901
                 print_summary(exploit_vulnerability(target, endpoint, command=cmd))
 
         elif choice == "4":
-            target   = _input("Enter target URL: ")
-            endpoint = _input("Enter endpoint (Enter = auto): ") or (target.rstrip("/") + "/api/graphql")
+            target = _input("Enter target URL: ")
+            endpoint = _input("Enter endpoint (Enter = auto): ") or (
+                target.rstrip("/") + "/api/graphql"
+            )
             if target:
                 if not check_real_rce(target, endpoint):
                     blind_rce_test(target, endpoint)
@@ -378,9 +402,9 @@ def _interactive_menu() -> None:  # noqa: C901
                 print("[!] Target URL required")
 
         elif choice == "5":
-            target   = _input("Enter target URL: ")
+            target = _input("Enter target URL: ")
             endpoint = _input("Enter endpoint: ")
-            cmd      = _input("Command (Enter = id): ") or "id"
+            cmd = _input("Command (Enter = id): ") or "id"
             if target and endpoint:
                 print_summary(exploit_vulnerability(target, endpoint, command=cmd, aggressive=True))
             else:
@@ -395,9 +419,13 @@ def _interactive_menu() -> None:  # noqa: C901
                     exploit = _input("Exploit found vulnerabilities? (yes/no): ")
                     if exploit in ("yes", "y"):
                         for r in results:
-                            cmd = _input(f"Command for {r.get('cve', 'N/A')} (Enter = whoami): ") or "whoami"
-                            print_summary(exploit_vulnerability(
-                                r["url"], r["endpoint"], command=cmd))
+                            cmd = (
+                                _input(f"Command for {r.get('cve', 'N/A')} (Enter = whoami): ")
+                                or "whoami"
+                            )
+                            print_summary(
+                                exploit_vulnerability(r["url"], r["endpoint"], command=cmd)
+                            )
             else:
                 print("[!] Target URL required")
 
@@ -417,6 +445,7 @@ def _interactive_menu() -> None:  # noqa: C901
             target = _input("Enter target URL: ")
             if target:
                 from spring2shell.core.reporter import write_dual_report
+
                 results = safe_full_audit(target)
                 risk = results.get("strict_summary", {}).get("overall_risk", "unknown")
                 print(f"[+] Overall risk: {risk.upper()}")
@@ -444,6 +473,7 @@ def _interactive_menu() -> None:  # noqa: C901
             target = _input("Enter target URL: ")
             if target:
                 from spring2shell.react2shell.scanner import scan_react2shell
+
                 print_summary(scan_react2shell(target))
             else:
                 print("[!] Target URL required")
@@ -452,6 +482,7 @@ def _interactive_menu() -> None:  # noqa: C901
             target = _input("Enter target URL: ")
             if target:
                 from spring2shell.core.ssrf import ssrf_scan
+
                 print_summary(ssrf_scan(target))
             else:
                 print("[!] Target URL required")
@@ -460,6 +491,7 @@ def _interactive_menu() -> None:  # noqa: C901
             target = _input("Enter target URL: ")
             if target:
                 from spring2shell.core.ssti import ssti_scan
+
                 print_summary(ssti_scan(target))
             else:
                 print("[!] Target URL required")
@@ -475,6 +507,7 @@ def _interactive_menu() -> None:  # noqa: C901
 # ---------------------------------------------------------------------------
 # Argument parser
 # ---------------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -499,11 +532,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ── Global security flags ────────────────────────────────────────────────
     parser.add_argument(
-        "--insecure", action="store_true", default=False,
+        "--insecure",
+        action="store_true",
+        default=False,
         help="Disable TLS certificate verification (not recommended).",
     )
     parser.add_argument(
-        "--verbose-errors", action="store_true", default=False,
+        "--verbose-errors",
+        action="store_true",
+        default=False,
         help="Log swallowed network exceptions for diagnostics.",
     )
     parser.add_argument(
@@ -513,64 +550,79 @@ def build_parser() -> argparse.ArgumentParser:
         help="Runtime profile (timeout, retries, delay). Default: default.",
     )
     parser.add_argument(
-        "--dry-run", action="store_true", default=False,
+        "--dry-run",
+        action="store_true",
+        default=False,
         help="Print payloads and endpoints that WOULD be sent without making real HTTP requests.",
     )
-
 
     # ── Auth flags ───────────────────────────────────────────────────────────
     auth_group = parser.add_argument_group("authentication")
     auth_group.add_argument(
-        "--auth-bearer", metavar="TOKEN",
+        "--auth-bearer",
+        metavar="TOKEN",
         help="Bearer token for Authorization header.",
     )
     auth_group.add_argument(
-        "--auth-basic", metavar="USER:PASS",
+        "--auth-basic",
+        metavar="USER:PASS",
         help="HTTP Basic auth credentials (USER:PASS).",
     )
     auth_group.add_argument(
-        "--auth-cookie", metavar="NAME=VALUE[;NAME2=VALUE2]",
+        "--auth-cookie",
+        metavar="NAME=VALUE[;NAME2=VALUE2]",
         help="Cookie(s) for authenticated sessions (semicolon-separated).",
     )
     auth_group.add_argument(
-        "--auth-header", metavar="Header:Value[;Header2:Value2]",
+        "--auth-header",
+        metavar="Header:Value[;Header2:Value2]",
         help="Custom authentication header(s) (semicolon-separated).",
     )
 
     # ── Network flags ────────────────────────────────────────────────────────
     net_group = parser.add_argument_group("network")
     net_group.add_argument(
-        "--proxy", metavar="URL",
+        "--proxy",
+        metavar="URL",
         help="HTTP/SOCKS5 proxy (e.g. http://127.0.0.1:8080 or socks5://127.0.0.1:9050).",
     )
     net_group.add_argument(
-        "--rate", type=int, default=0, metavar="N",
+        "--rate",
+        type=int,
+        default=0,
+        metavar="N",
         help="Max requests per second — 0 = unlimited (default: 0).",
     )
 
     # ── OOB flags ────────────────────────────────────────────────────────────
     oob_group = parser.add_argument_group("OOB (blind RCE)")
     oob_group.add_argument(
-        "--oob-server", metavar="URL",
+        "--oob-server",
+        metavar="URL",
         help="Self-hosted Interactsh server URL for blind RCE detection.",
     )
     oob_group.add_argument(
-        "--oob-token", metavar="TOKEN",
+        "--oob-token",
+        metavar="TOKEN",
         help="Authentication token for OOB server.",
     )
 
     # ── Output flags ─────────────────────────────────────────────────────────
     out_group = parser.add_argument_group("output")
     out_group.add_argument(
-        "--audit-log", metavar="FILE",
+        "--audit-log",
+        metavar="FILE",
         help="Write JSONL audit trail of all requests to this file.",
     )
     out_group.add_argument(
-        "--webhook", metavar="URL",
+        "--webhook",
+        metavar="URL",
         help="Webhook URL for real-time Confirmed-RCE notifications (Slack/Teams/Telegram).",
     )
     out_group.add_argument(
-        "--config", metavar="FILE", default=None,
+        "--config",
+        metavar="FILE",
+        default=None,
         help="Path to YAML config file (default: ./config.yaml if it exists).",
     )
 
@@ -596,37 +648,60 @@ def build_parser() -> argparse.ArgumentParser:
     p_direct.add_argument("-c", "--command", default="whoami", help="Command to execute.")
     p_direct.add_argument("--test-all", action="store_true", help="Test all known endpoints.")
     p_direct.add_argument("--aggressive", action="store_true", help="Enable aggressive WAF bypass.")
-    p_direct.add_argument("--no-strict-verify", action="store_true",
-                          help="Disable 2-marker strict verification (faster but more false-positives).")
-    p_direct.add_argument("--quick", action="store_true",
-                          help="Test only 6 common endpoints (graphql, api, actuator).")
-    p_direct.add_argument("--hybrid", action="store_true",
-                          help="Use hybrid CVE+generic payloads simultaneously.")
-    p_direct.add_argument("--find-endpoints", action="store_true",
-                          help="Auto-detect working endpoints before exploiting.")
+    p_direct.add_argument(
+        "--no-strict-verify",
+        action="store_true",
+        help="Disable 2-marker strict verification (faster but more false-positives).",
+    )
+    p_direct.add_argument(
+        "--quick",
+        action="store_true",
+        help="Test only 6 common endpoints (graphql, api, actuator).",
+    )
+    p_direct.add_argument(
+        "--hybrid", action="store_true", help="Use hybrid CVE+generic payloads simultaneously."
+    )
+    p_direct.add_argument(
+        "--find-endpoints",
+        action="store_true",
+        help="Auto-detect working endpoints before exploiting.",
+    )
 
     # scan
     p_scan = sub.add_parser("scan", help="Bulk scan from a targets file.")
     p_scan.add_argument("targets_file", help="File with one URL per line.")
     p_scan.add_argument("output_prefix", help="Output file prefix (e.g. reports/scan).")
-    p_scan.add_argument("-t", "--threads", type=int, default=5, help="Worker threads or async tasks (default: 5).")
+    p_scan.add_argument(
+        "-t", "--threads", type=int, default=5, help="Worker threads or async tasks (default: 5)."
+    )
     p_scan.add_argument("--resume", action="store_true", help="Resume from last checkpoint.")
     p_scan.add_argument("--html-report", action="store_true", help="Also generate HTML report.")
     p_scan.add_argument("--encrypt-reports", action="store_true", help="Encrypt output reports.")
-    p_scan.add_argument("--format", default="json,txt",
-                        help="Report formats to generate (comma-separated: json,txt,html,sarif).")
-    p_scan.add_argument("--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine.")
+    p_scan.add_argument(
+        "--format",
+        default="json,txt",
+        help="Report formats to generate (comma-separated: json,txt,html,sarif).",
+    )
+    p_scan.add_argument(
+        "--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine."
+    )
 
     # cve-scan
     p_cve = sub.add_parser("cve-scan", help="CVE-focused mass scan.")
     p_cve.add_argument("targets_file", help="File with one URL per line.")
     p_cve.add_argument("-o", "--output", help="Write results to this file.")
-    p_cve.add_argument("-t", "--threads", type=int, default=5,
-                       help="Worker threads or async tasks (default: 5).")
-    p_cve.add_argument("--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine.")
+    p_cve.add_argument(
+        "-t", "--threads", type=int, default=5, help="Worker threads or async tasks (default: 5)."
+    )
+    p_cve.add_argument(
+        "--async", dest="async_mode", action="store_true", help="Use high-concurrency async engine."
+    )
 
     # profile-waf
-    p_profile = sub.add_parser("profile-waf", help="safely profile a target URL to check which characters/methods trigger WAF blocks.")
+    p_profile = sub.add_parser(
+        "profile-waf",
+        help="safely profile a target URL to check which characters/methods trigger WAF blocks.",
+    )
     p_profile.add_argument("target", help="Target URL to profile.")
     p_profile.add_argument("-o", "--output", help="Write diagnostic JSON report to this file.")
 
@@ -634,8 +709,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify = sub.add_parser("verify", help="Verify if a previous RCE finding is real.")
     p_verify.add_argument("target", help="Target base URL.")
     p_verify.add_argument("-e", "--endpoint", help="Endpoint to verify (default: /api/graphql).")
-    p_verify.add_argument("-m", "--method", default="POST",
-                          choices=["POST", "GET"], help="HTTP method (default: POST).")
+    p_verify.add_argument(
+        "-m",
+        "--method",
+        default="POST",
+        choices=["POST", "GET"],
+        help="HTTP method (default: POST).",
+    )
 
     # exploit
     p_exploit = sub.add_parser("exploit", help="Load JSON report and exploit interactively.")
@@ -660,8 +740,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_enc = sub.add_parser("encrypt", help="Encrypt or decrypt a report file.")
     p_enc.add_argument("action", choices=["encrypt", "decrypt"], help="encrypt or decrypt.")
     p_enc.add_argument("file", help="Report file to process.")
-    p_enc.add_argument("--remove-original", action="store_true",
-                       help="Delete plaintext file after encryption.")
+    p_enc.add_argument(
+        "--remove-original", action="store_true", help="Delete plaintext file after encryption."
+    )
 
     # nuclei-export
     p_nuclei = sub.add_parser("nuclei-export", help="Export findings as Nuclei v3 YAML templates.")
@@ -673,35 +754,39 @@ def build_parser() -> argparse.ArgumentParser:
     p_dojo.add_argument("report_file", help="Path to JSON scan report.")
     p_dojo.add_argument("--url", help="DefectDojo URL (or DEFECTDOJO_URL env var).")
     p_dojo.add_argument("--api-key", help="API Key (or DEFECTDOJO_API_KEY env var).")
-    p_dojo.add_argument("--engagement-id", type=int, help="Engagement ID (or DEFECTDOJO_ENGAGEMENT_ID env var).")
+    p_dojo.add_argument(
+        "--engagement-id", type=int, help="Engagement ID (or DEFECTDOJO_ENGAGEMENT_ID env var)."
+    )
     p_dojo.add_argument("--lead-id", type=int, default=1, help="Lead User ID (default: 1).")
-    p_dojo.add_argument("--environment", default="Development", help="Environment (default: Development).")
+    p_dojo.add_argument(
+        "--environment", default="Development", help="Environment (default: Development)."
+    )
 
     return parser
 
 
 _COMMAND_MAP = {
-    "safe-audit":     _cmd_safe_audit,
-    "log-audit":      _cmd_log_audit,
-    "direct":         _cmd_direct,
-    "scan":           _cmd_scan,
-    "cve-scan":       _cmd_cve_scan,
-    "ssrf-scan":  _cmd_ssrf_scan,
-    "ssti-scan":      _cmd_ssti_scan,
-    "encrypt":        _cmd_encrypt,
-    "verify":         _cmd_verify,
-    "exploit":        _cmd_exploit,
-    "menu":           _cmd_menu,
-    "nuclei-export":  _cmd_nuclei_export,
+    "safe-audit": _cmd_safe_audit,
+    "log-audit": _cmd_log_audit,
+    "direct": _cmd_direct,
+    "scan": _cmd_scan,
+    "cve-scan": _cmd_cve_scan,
+    "ssrf-scan": _cmd_ssrf_scan,
+    "ssti-scan": _cmd_ssti_scan,
+    "encrypt": _cmd_encrypt,
+    "verify": _cmd_verify,
+    "exploit": _cmd_exploit,
+    "menu": _cmd_menu,
+    "nuclei-export": _cmd_nuclei_export,
     "defectdojo-upload": _cmd_defectdojo_upload,
-    "profile-waf":    _cmd_profile_waf,
+    "profile-waf": _cmd_profile_waf,
 }
-
 
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def main(argv: list[str] | None = None) -> NoReturn:
     """Parse arguments, configure runtime, and dispatch to the appropriate handler."""
@@ -729,8 +814,8 @@ def main(argv: list[str] | None = None) -> NoReturn:
 
 def _apply_config(args: argparse.Namespace) -> None:
     """Load YAML config and merge into args (CLI wins)."""
-    import os
     from pathlib import Path
+
     from spring2shell.utils.network import load_config
 
     config_path = getattr(args, "config", None)
@@ -746,13 +831,13 @@ def _apply_config(args: argparse.Namespace) -> None:
 
     config = load_config(config_path)
     _mapping = {
-        "proxy":       "proxy",
-        "oob_server":  "oob_server",
-        "oob_token":   "oob_token",
-        "webhook":     "webhook",
-        "rate":        "rate",
-        "audit_log":   "audit_log",
-        "insecure":    "insecure",
+        "proxy": "proxy",
+        "oob_server": "oob_server",
+        "oob_token": "oob_token",
+        "webhook": "webhook",
+        "rate": "rate",
+        "audit_log": "audit_log",
+        "insecure": "insecure",
     }
     for cfg_key, arg_key in _mapping.items():
         if cfg_key in config and getattr(args, arg_key, None) in (None, False, 0):
@@ -763,9 +848,13 @@ def _configure_subsystems(args: argparse.Namespace) -> None:
     """Configure auth, proxy, rate limiter, audit logger, OOB, webhook."""
     try:
         from spring2shell.utils.auth import (
-            configure_auth, configure_proxy, configure_rate,
-            configure_audit, configure_webhook,
+            configure_audit,
+            configure_auth,
+            configure_proxy,
+            configure_rate,
+            configure_webhook,
         )
+
         configure_auth(args)
         configure_proxy(args)
         configure_rate(args)
@@ -776,6 +865,7 @@ def _configure_subsystems(args: argparse.Namespace) -> None:
 
     try:
         from spring2shell.utils.oob import configure_oob
+
         configure_oob(args)
     except ImportError:
         pass
@@ -784,11 +874,11 @@ def _configure_subsystems(args: argparse.Namespace) -> None:
     if getattr(args, "dry_run", False):
         try:
             from spring2shell.utils.dry_run import enable_dry_run
+
             enable_dry_run()
             print("[DRY-RUN] Mode enabled — no real HTTP requests will be sent.")
         except ImportError:
             pass
-
 
 
 if __name__ == "__main__":

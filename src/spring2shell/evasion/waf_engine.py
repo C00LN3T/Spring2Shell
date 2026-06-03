@@ -20,6 +20,7 @@ from typing import Any
 # Data loader
 # ---------------------------------------------------------------------------
 
+
 def load_waf_bypasses(data_root: str | Path | None = None) -> list[dict[str, Any]]:
     """Load WAF bypass templates from the JSON data file.
 
@@ -39,6 +40,7 @@ def load_waf_bypasses(data_root: str | Path | None = None) -> list[dict[str, Any
 # ---------------------------------------------------------------------------
 # Engine
 # ---------------------------------------------------------------------------
+
 
 class WAFEvasionEngine:
     """Apply random body and header mutations to evade WAF detection."""
@@ -89,9 +91,7 @@ class WAFEvasionEngine:
 
     # ── combined apply ───────────────────────────────────────────────────────
 
-    def apply(
-        self, body: str, headers: dict[str, str]
-    ) -> tuple[str, dict[str, str]]:
+    def apply(self, body: str, headers: dict[str, str]) -> tuple[str, dict[str, str]]:
         """Apply a randomly selected body mutation + header mutation.
 
         Returns:

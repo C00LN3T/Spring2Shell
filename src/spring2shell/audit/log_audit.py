@@ -51,6 +51,7 @@ _LOG4J_REGEX_PATTERNS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_log4j_versions(text: str) -> list[str]:
     """Extract Log4j version strings from response text.
 
@@ -89,6 +90,7 @@ def _is_log4j_vulnerable(version: str) -> bool:
 # ---------------------------------------------------------------------------
 # Structured findings (for reporter/CI)
 # ---------------------------------------------------------------------------
+
 
 def run_log_audit(target_url: str) -> list[dict[str, Any]]:
     """Passive Log4Shell risk assessment returning structured finding dicts.
@@ -170,6 +172,7 @@ def run_log_audit(target_url: str) -> list[dict[str, Any]]:
 # Rich audit dict (for safe_full_audit / JSON report)
 # ---------------------------------------------------------------------------
 
+
 def safe_log_audit(target_url: str) -> dict[str, Any]:
     """Rich passive Log4Shell audit returning a full findings dict.
 
@@ -195,21 +198,19 @@ def safe_log_audit(target_url: str) -> dict[str, Any]:
             log_swallowed_exception(f"safe_log_audit {path}", exc)
             continue
 
-        audit_findings["checked_paths"].append({
-            "path": path,
-            "status_code": resp.status_code,
-        })
+        audit_findings["checked_paths"].append(
+            {
+                "path": path,
+                "status_code": resp.status_code,
+            }
+        )
         text = resp.text[:200_000]
         lower = text.lower()
 
         if resp.status_code == 200 and path.startswith("/actuator"):
-            audit_findings["evidence"].append(
-                f"Accessible management endpoint: {path}"
-            )
+            audit_findings["evidence"].append(f"Accessible management endpoint: {path}")
         if "log4j" in lower or "log4shell" in lower or "jndilookup" in lower:
-            audit_findings["evidence"].append(
-                f"Log-related indicator on {path}"
-            )
+            audit_findings["evidence"].append(f"Log-related indicator on {path}")
         versions = _parse_log4j_versions(text)
         for v in versions:
             if v not in audit_findings["versions_detected"]:
@@ -226,6 +227,10 @@ def safe_log_audit(target_url: str) -> dict[str, Any]:
     elif audit_findings["evidence"]:
         audit_findings["risk"] = "medium"
 
-    log_event(logging.INFO, "safe_log_audit complete",
-              risk=audit_findings["risk"], versions=audit_findings["versions_detected"])
+    log_event(
+        logging.INFO,
+        "safe_log_audit complete",
+        risk=audit_findings["risk"],
+        versions=audit_findings["versions_detected"],
+    )
     return audit_findings

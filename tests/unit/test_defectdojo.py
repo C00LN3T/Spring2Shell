@@ -5,7 +5,7 @@ Unit tests for defectdojo.py — DefectDojo API upload.
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-import pytest
+
 from spring2shell.utils.defectdojo import upload_to_defectdojo
 
 
@@ -27,7 +27,7 @@ def test_upload_to_defectdojo_success(tmp_path):
 
     assert success is True
     mock_post.assert_called_once()
-    args, kwargs = mock_post.call_args
+    _args, kwargs = mock_post.call_args
     assert "Authorization" in kwargs["headers"]
     assert kwargs["headers"]["Authorization"] == "Token secret-key"
     assert kwargs["data"]["engagement"] == 123

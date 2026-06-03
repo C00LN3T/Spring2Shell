@@ -25,7 +25,7 @@ def export_to_sarif(findings: list[dict[str, Any]], output_path: str | Path) -> 
     rules: dict[str, dict[str, Any]] = {}
     results = []
 
-    for idx, f in enumerate(findings):
+    for _idx, f in enumerate(findings):
         # Skip safe ones
         if f.get("status") == "not_vulnerable":
             continue
@@ -39,10 +39,10 @@ def export_to_sarif(findings: list[dict[str, Any]], output_path: str | Path) -> 
                 "shortDescription": {
                     "text": f.get("reason", "Vulnerability detected by spring2shell")
                 },
-                "fullDescription": {
-                    "text": f"Vulnerability {cve} detected on target endpoint."
-                },
-                "helpUri": f"https://nvd.nist.gov/vuln/detail/{cve}" if f.get("cve") else "https://github.com/PROJECTS/Spring2Shell-1",
+                "fullDescription": {"text": f"Vulnerability {cve} detected on target endpoint."},
+                "helpUri": f"https://nvd.nist.gov/vuln/detail/{cve}"
+                if f.get("cve")
+                else "https://github.com/PROJECTS/Spring2Shell-1",
             }
 
         level = "error" if f.get("status") == "confirmed" else "warning"
@@ -51,15 +51,11 @@ def export_to_sarif(findings: list[dict[str, Any]], output_path: str | Path) -> 
             "ruleId": rule_id,
             "ruleIndex": list(rules.keys()).index(rule_id),
             "level": level,
-            "message": {
-                "text": f.get("evidence", "Potential Remote Code Execution.")
-            },
+            "message": {"text": f.get("evidence", "Potential Remote Code Execution.")},
             "locations": [
                 {
                     "physicalLocation": {
-                        "artifactLocation": {
-                            "uri": f.get("endpoint", f.get("url", ""))
-                        }
+                        "artifactLocation": {"uri": f.get("endpoint", f.get("url", ""))}
                     }
                 }
             ],

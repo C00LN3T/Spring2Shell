@@ -5,7 +5,7 @@ Unit tests for sarif_export.py — SARIF standard export format.
 from __future__ import annotations
 
 import json
-from pathlib import Path
+
 from spring2shell.utils.sarif_export import export_to_sarif
 
 
@@ -32,7 +32,7 @@ def test_export_to_sarif(tmp_path):
             "evidence": "Spring indicator found",
             "method": "GET",
             "status_code": 200,
-        }
+        },
     ]
 
     result_path = export_to_sarif(findings, output_file)
@@ -44,7 +44,7 @@ def test_export_to_sarif(tmp_path):
     assert data["version"] == "2.1.0"
     assert "$schema" in data
     assert len(data["runs"]) == 1
-    
+
     run = data["runs"][0]
     assert run["tool"]["driver"]["name"] == "spring2shell"
     assert len(run["results"]) == 2

@@ -21,10 +21,10 @@ from spring2shell.utils.auth import apply_auth, audit_log, rate_limit_acquire
 from spring2shell.utils.logging import log_event, log_swallowed_exception
 from spring2shell.utils.signals import is_interrupted
 
-
 # ---------------------------------------------------------------------------
 # Payload loader
 # ---------------------------------------------------------------------------
+
 
 def _load_ssti_payloads() -> dict[str, Any]:
     path = Path(__file__).parents[3] / "data" / "payloads" / "ssti_payloads.json"
@@ -62,6 +62,7 @@ def _check_ssti_response(resp_text: str) -> bool:
 # Main SSTI scan
 # ---------------------------------------------------------------------------
 
+
 def ssti_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[str, Any]]:
     """Probe *target_url* for Server-Side Template Injection.
 
@@ -88,9 +89,16 @@ def ssti_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
 
     if not endpoints:
         endpoints = [
-            "/graphql", "/api/graphql", "/api/v1/graphql",
-            "/api/search", "/api/query", "/api/v1/query",
-            "/search", "/query", "/template", "/render",
+            "/graphql",
+            "/api/graphql",
+            "/api/v1/graphql",
+            "/api/search",
+            "/api/query",
+            "/api/v1/query",
+            "/search",
+            "/query",
+            "/template",
+            "/render",
         ]
 
     engines = {
@@ -172,7 +180,9 @@ def ssti_scan(target_url: str, endpoints: list[str] | None = None) -> list[dict[
                             framework=engine_name,
                         )
                     )
-                    log_event(logging.WARNING, f"SSTI candidate [{engine_name}] via GET", url=full_url)
+                    log_event(
+                        logging.WARNING, f"SSTI candidate [{engine_name}] via GET", url=full_url
+                    )
             except Exception as exc:
                 log_swallowed_exception(f"ssti-scan {engine_name} GET {full_url}", exc)
 

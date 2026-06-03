@@ -1,17 +1,16 @@
 """Unit tests for nuclei_export.py — B3: Nuclei template generation."""
+
 from __future__ import annotations
 
-from pathlib import Path
 from datetime import datetime, timezone
-
-import pytest
+from pathlib import Path
 
 from spring2shell.utils.nuclei_export import (
-    _sanitize_id,
-    _map_severity,
     _build_template_id,
-    generate_template,
+    _map_severity,
+    _sanitize_id,
     export_templates,
+    generate_template,
 )
 
 

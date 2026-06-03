@@ -25,15 +25,21 @@ from spring2shell.utils.auth import apply_auth, audit_log, rate_limit_acquire
 from spring2shell.utils.logging import log_event, log_swallowed_exception
 from spring2shell.utils.signals import is_interrupted
 
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
 _GRAPHQL_ENDPOINTS = [
-    "/graphql", "/api/graphql", "/v1/graphql", "/v2/graphql",
-    "/__graphql", "/graphql/v1", "/query", "/api/query",
-    "/gql", "/api/gql",
+    "/graphql",
+    "/api/graphql",
+    "/v1/graphql",
+    "/v2/graphql",
+    "/__graphql",
+    "/graphql/v1",
+    "/query",
+    "/api/query",
+    "/gql",
+    "/api/gql",
 ]
 
 _NEXTJS_API_PREFIXES = ["/api/", "/app/api/", "/_next/"]
@@ -55,12 +61,19 @@ _RSC_INDICATOR = "__RSC_PAYLOAD"
 _NEXT_DATA_RE = re.compile(r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL)
 
 # Markers that indicate successful SpEL evaluation
-_SPEL_EVAL_INDICATORS = ["49", "java.lang.", "RuntimeException", "ProcessBuilder", "org.springframework"]
+_SPEL_EVAL_INDICATORS = [
+    "49",
+    "java.lang.",
+    "RuntimeException",
+    "ProcessBuilder",
+    "org.springframework",
+]
 
 
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
 
 def _extract_next_data_routes(html: str, base_url: str) -> list[str]:
     """Parse __NEXT_DATA__ JSON to discover internal API routes."""
@@ -77,7 +90,7 @@ def _extract_next_data_routes(html: str, base_url: str) -> list[str]:
         # Extract props.pageProps if any API references exist
         page_props = data.get("props", {}).get("pageProps", {})
         if isinstance(page_props, dict):
-            for key, val in page_props.items():
+            for _key, val in page_props.items():
                 if isinstance(val, str) and val.startswith("/api/"):
                     routes.append(val)
         return routes
@@ -85,13 +98,16 @@ def _extract_next_data_routes(html: str, base_url: str) -> list[str]:
         return []
 
 
-def _detect_graphql_introspection(session, base_url: str, endpoint: str,
-                                   headers: dict) -> bool:
+def _detect_graphql_introspection(session, base_url: str, endpoint: str, headers: dict) -> bool:
     """Return True if GraphQL introspection is enabled (schema leaked)."""
     url = urllib.parse.urljoin(base_url.rstrip("/") + "/", endpoint.lstrip("/"))
     try:
-        resp = session.post(url, data=_GRAPHQL_INTROSPECTION,
-                            headers={**headers, "Content-Type": "application/json"}, timeout=6)
+        resp = session.post(
+            url,
+            data=_GRAPHQL_INTROSPECTION,
+            headers={**headers, "Content-Type": "application/json"},
+            timeout=6,
+        )
         if resp.status_code == 200 and "__Schema" in resp.text:
             log_event(logging.WARNING, "GraphQL introspection ENABLED", url=url)
             return True
@@ -100,15 +116,20 @@ def _detect_graphql_introspection(session, base_url: str, endpoint: str,
     return False
 
 
-def _detect_server_actions(session, base_url: str, endpoints: list[str],
-                            headers: dict) -> list[str]:
+def _detect_server_actions(
+    session, base_url: str, endpoints: list[str], headers: dict
+) -> list[str]:
     """Detect Next.js Server Action endpoints via Next-Action response header."""
     action_endpoints: list[str] = []
     for ep in endpoints:
         url = urllib.parse.urljoin(base_url.rstrip("/") + "/", ep.lstrip("/"))
         try:
-            resp = session.post(url, data='{"0":"test"}',
-                                headers={**headers, "Next-Action": "test", "Content-Type": "text/plain"}, timeout=5)
+            resp = session.post(
+                url,
+                data='{"0":"test"}',
+                headers={**headers, "Next-Action": "test", "Content-Type": "text/plain"},
+                timeout=5,
+            )
             if "Next-Action" in resp.headers or resp.status_code in (400, 404):
                 # A 400/404 on Next-Action POST often means SA routing is active
                 if "Next-Action" in resp.headers:
@@ -122,6 +143,7 @@ def _detect_server_actions(session, base_url: str, endpoints: list[str],
 # ---------------------------------------------------------------------------
 # Main scanner
 # ---------------------------------------------------------------------------
+
 
 def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
     """Scan a Next.js / React app for SpEL/GraphQL injection vulnerabilities.
@@ -154,8 +176,11 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
         audit_log("GET", target_url, resp.status_code, None, "react2shell_probe")
 
         html = resp.text
-        is_nextjs = "__NEXT_DATA__" in html or "/_next/" in html or \
-                    resp.headers.get("x-powered-by", "").lower().startswith("next")
+        is_nextjs = (
+            "__NEXT_DATA__" in html
+            or "/_next/" in html
+            or resp.headers.get("x-powered-by", "").lower().startswith("next")
+        )
 
         if is_nextjs:
             log_event(logging.INFO, "Next.js detected", target=target_url)
@@ -171,8 +196,7 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
     # ── Step 2: Build endpoint list ──────────────────────────────────────────
     endpoints_to_test = list(_GRAPHQL_ENDPOINTS)
     if is_nextjs:
-        endpoints_to_test += ["/api/auth", "/api/user", "/api/session",
-                               "/api/data", "/api/hello"] + discovered_routes
+        endpoints_to_test += ["/api/auth", "/api/user", "/api/session", "/api/data", "/api/hello", *discovered_routes]
     endpoints_to_test = list(dict.fromkeys(endpoints_to_test))  # deduplicate
 
     # ── Step 3: GraphQL introspection check ──────────────────────────────────
@@ -195,8 +219,7 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
 
     # ── Step 4: Server Action detection ──────────────────────────────────────
     if is_nextjs:
-        sa_eps = _detect_server_actions(session, target_url,
-                                        endpoints_to_test[:10], headers)
+        sa_eps = _detect_server_actions(session, target_url, endpoints_to_test[:10], headers)
         for ep in sa_eps:
             findings.append(
                 build_finding(
@@ -220,7 +243,8 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
             rate_limit_acquire()
             try:
                 resp = session.post(
-                    full_url, data=probe,
+                    full_url,
+                    data=probe,
                     headers={**headers, "Content-Type": "application/json"},
                     timeout=8,
                 )
@@ -244,8 +268,12 @@ def scan_react2shell(target_url: str) -> list[dict[str, Any]]:
                                     framework="Next.js/React" if is_nextjs else "React",
                                 )
                             )
-                            log_event(logging.WARNING, "React2Shell SpEL candidate",
-                                      url=full_url, indicator=indicator)
+                            log_event(
+                                logging.WARNING,
+                                "React2Shell SpEL candidate",
+                                url=full_url,
+                                indicator=indicator,
+                            )
                             break
             except Exception as exc:
                 log_swallowed_exception(f"react2shell spel-probe {full_url}", exc)

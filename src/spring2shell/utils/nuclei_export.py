@@ -17,8 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 # ─── Severity mapping ─────────────────────────────────────────────────────────
+
 
 def _map_severity(finding: dict[str, Any]) -> str:
     status = finding.get("status", "")
@@ -91,6 +91,7 @@ _DEFAULT_META = {
 
 # ─── Template ID sanitisation ─────────────────────────────────────────────────
 
+
 def _sanitize_id(text: str) -> str:
     """Convert arbitrary text to a valid Nuclei template ID."""
     text = text.lower()
@@ -111,6 +112,7 @@ def _build_template_id(finding: dict[str, Any]) -> str:
 
 
 # ─── YAML generator ───────────────────────────────────────────────────────────
+
 
 def generate_template(finding: dict[str, Any]) -> str:
     """Generate a Nuclei v3 YAML template string for a single finding.
@@ -174,13 +176,13 @@ def generate_template(finding: dict[str, Any]) -> str:
     template = f"""id: {template_id}
 
 info:
-  name: "{meta['name']}" - {cve or 'spring2shell'}
+  name: "{meta["name"]}" - {cve or "spring2shell"}
   author: spring2shell
   severity: {severity}
   description: |
-    {evidence[:300] if evidence else 'Potential vulnerability detected by spring2shell scanner.'}
-  tags: {meta['tags']}
-  reference:{chr(10) + ref_block if ref_block else ' []'}
+    {evidence[:300] if evidence else "Potential vulnerability detected by spring2shell scanner."}
+  tags: {meta["tags"]}
+  reference:{chr(10) + ref_block if ref_block else " []"}
   metadata:
     generated: {generated}
     scanner: spring2shell{cve_block}

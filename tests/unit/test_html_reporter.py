@@ -1,15 +1,13 @@
 """Unit tests for html_reporter.py — HTML report generation."""
+
 from __future__ import annotations
-
-from pathlib import Path
-
-import pytest
 
 from spring2shell.core.html_reporter import generate_html_report
 
 
 def _make_findings():
     from datetime import datetime, timezone
+
     ts = datetime.now(tz=timezone.utc).isoformat()
     return [
         {

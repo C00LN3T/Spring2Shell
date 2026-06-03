@@ -25,12 +25,11 @@ import requests
 from spring2shell.utils.logging import log_event, log_swallowed_exception
 from spring2shell.utils.network import ssl_verify
 
-
 # ─── Color constants ──────────────────────────────────────────────────────────
 
-_COLOR_CONFIRMED = 0xFF0000    # red
-_COLOR_UNVERIFIED = 0xFFA500   # orange
-_COLOR_SAFE = 0x00FF00         # green
+_COLOR_CONFIRMED = 0xFF0000  # red
+_COLOR_UNVERIFIED = 0xFFA500  # orange
+_COLOR_SAFE = 0x00FF00  # green
 
 _SLACK_COLOR_CONFIRMED = "danger"
 _SLACK_COLOR_UNVERIFIED = "warning"
@@ -42,10 +41,13 @@ def _severity_color(status: str) -> int:
 
 
 def _slack_color(status: str) -> str:
-    return {"confirmed": _SLACK_COLOR_CONFIRMED, "unverified": _SLACK_COLOR_UNVERIFIED}.get(status, _SLACK_COLOR_SAFE)
+    return {"confirmed": _SLACK_COLOR_CONFIRMED, "unverified": _SLACK_COLOR_UNVERIFIED}.get(
+        status, _SLACK_COLOR_SAFE
+    )
 
 
 # ─── Format builders ─────────────────────────────────────────────────────────
+
 
 def _build_slack_payload(finding: dict[str, Any]) -> dict[str, Any]:
     """Slack Block Kit with colored attachment."""
@@ -89,8 +91,16 @@ def _build_discord_payload(finding: dict[str, Any]) -> dict[str, Any]:
                 "color": _severity_color(status),
                 "fields": [
                     {"name": "Target", "value": f"`{url}`", "inline": True},
-                    {"name": "Endpoint", "value": f"`{finding.get('endpoint', 'N/A')}`", "inline": True},
-                    {"name": "Confidence", "value": finding.get("confidence", "N/A"), "inline": True},
+                    {
+                        "name": "Endpoint",
+                        "value": f"`{finding.get('endpoint', 'N/A')}`",
+                        "inline": True,
+                    },
+                    {
+                        "name": "Confidence",
+                        "value": finding.get("confidence", "N/A"),
+                        "inline": True,
+                    },
                     {"name": "Method", "value": finding.get("method", "N/A"), "inline": True},
                 ],
                 "footer": {"text": "spring2shell scanner"},
@@ -152,6 +162,7 @@ def _build_generic_payload(finding: dict[str, Any]) -> dict[str, Any]:
 
 # ─── Auto-detection + send ────────────────────────────────────────────────────
 
+
 def _detect_format(url: str) -> str:
     """Detect webhook format from URL."""
     url_lower = url.lower()
@@ -185,6 +196,7 @@ def send_siem_event(
     if not webhook_url:
         try:
             from spring2shell.utils.auth import get_webhook_url
+
             webhook_url = get_webhook_url()
         except ImportError:
             pass

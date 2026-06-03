@@ -41,6 +41,7 @@ def load_targets(path: str | Path) -> list[str]:
     elif stripped.startswith("{") or stripped.startswith("["):
         try:
             import json
+
             data = json.loads(content)
             raw = _parse_burp_json(data)
             fmt = "Burp JSON"

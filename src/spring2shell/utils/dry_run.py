@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import urllib.parse
 from typing import Any
-from unittest.mock import MagicMock
 
 _DRY_RUN: bool = False
 
@@ -37,6 +36,7 @@ def is_dry_run() -> bool:
 
 class _FakeResponse:
     """Fake requests.Response for dry-run mode."""
+
     status_code: int = 200
     text: str = "DRY_RUN_RESPONSE"
     content: bytes = b"DRY_RUN_RESPONSE"
@@ -71,7 +71,8 @@ class DryRunSession:
         body = data or json
         body_str = str(body)[:200] if body else "(none)"
         headers_str = ", ".join(
-            f"{k}: {v}" for k, v in (headers or {}).items()
+            f"{k}: {v}"
+            for k, v in (headers or {}).items()
             if k.lower() not in ("authorization",)  # redact auth
         )
         # Full URL with query params

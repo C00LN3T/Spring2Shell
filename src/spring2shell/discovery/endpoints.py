@@ -26,6 +26,7 @@ _ENDPOINT_DISCOVERY_CACHE: dict[str, list[str]] = {}
 # Data loaders
 # ---------------------------------------------------------------------------
 
+
 def _load_list(path: Path) -> list[str]:
     """Read a flat text file (one path per line, # comments ignored)."""
     try:
@@ -56,6 +57,7 @@ def load_cve_endpoints(data_root: str | Path | None = None) -> list[str]:
 # Discovery
 # ---------------------------------------------------------------------------
 
+
 def discover_endpoints(target_url: str) -> list[str]:
     """Combine static wordlists with dynamic sitemap + JS discovery.
 
@@ -70,8 +72,8 @@ def discover_endpoints(target_url: str) -> list[str]:
     if target_url in _ENDPOINT_DISCOVERY_CACHE:
         return _ENDPOINT_DISCOVERY_CACHE[target_url]
 
-    from spring2shell.discovery.sitemap import parse_sitemap
     from spring2shell.discovery.js_analyzer import analyze_js_endpoints
+    from spring2shell.discovery.sitemap import parse_sitemap
 
     endpoints: set[str] = set(load_endpoints()) | set(load_cve_endpoints())
 
@@ -119,6 +121,7 @@ def prioritize_endpoints(endpoints: list[str], fingerprints: list[str]) -> list[
     Returns:
         Sorted list, highest-priority first.
     """
+
     def score(endpoint: str) -> int:
         base = 1
         ep_lower = endpoint.lower()

@@ -12,29 +12,32 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 import requests
-
 
 # ---------------------------------------------------------------------------
 # _escape_java_string
 # ---------------------------------------------------------------------------
 
+
 class TestEscapeJavaString:
     def test_escapes_double_quote(self) -> None:
         from spring2shell.core.verifier import _escape_java_string
+
         assert _escape_java_string('say "hi"') == 'say \\"hi\\"'
 
     def test_escapes_backslash(self) -> None:
         from spring2shell.core.verifier import _escape_java_string
+
         assert _escape_java_string("a\\b") == "a\\\\b"
 
     def test_plain_string_unchanged(self) -> None:
         from spring2shell.core.verifier import _escape_java_string
+
         assert _escape_java_string("id") == "id"
 
     def test_combined(self) -> None:
         from spring2shell.core.verifier import _escape_java_string
+
         result = _escape_java_string('echo "test\\n"')
         assert '\\"' in result
         assert "\\\\" in result
@@ -44,17 +47,21 @@ class TestEscapeJavaString:
 # _build_payload_from_template
 # ---------------------------------------------------------------------------
 
+
 class TestBuildPayloadFromTemplate:
     def test_none_template_returns_none(self) -> None:
         from spring2shell.core.verifier import _build_payload_from_template
+
         assert _build_payload_from_template(None, "id") is None
 
     def test_na_template_returns_none(self) -> None:
         from spring2shell.core.verifier import _build_payload_from_template
+
         assert _build_payload_from_template("N/A", "id") is None
 
     def test_command_placeholder_replaced(self) -> None:
         from spring2shell.core.verifier import _build_payload_from_template
+
         template = '{"query": "{{COMMAND}}"}'
         result = _build_payload_from_template(template, "whoami")
         assert "whoami" in result
@@ -62,12 +69,14 @@ class TestBuildPayloadFromTemplate:
 
     def test_empty_template_returns_none(self) -> None:
         from spring2shell.core.verifier import _build_payload_from_template
+
         assert _build_payload_from_template("", "id") is None
 
 
 # ---------------------------------------------------------------------------
 # _strict_verify_execution
 # ---------------------------------------------------------------------------
+
 
 def _make_response(text: str, status: int = 200) -> MagicMock:
     r = MagicMock(spec=requests.Response)
@@ -85,8 +94,9 @@ class TestStrictVerifyExecution:
         session.post.return_value = _make_response("no marker here")
         session.get.return_value = _make_response("no marker here")
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}):
             result = _strict_verify_execution(session, "http://t.example/api", "POST", {})
         assert result is False
 
@@ -105,6 +115,7 @@ class TestStrictVerifyExecution:
             data = kwargs.get("data", "")
             # Extract the marker from the payload
             import re
+
             match = re.search(r"(RCE_STRICT_\d+)", data)
             if match:
                 return _make_response(match.group(1))
@@ -122,6 +133,7 @@ class TestStrictVerifyExecution:
 # check_real_rce
 # ---------------------------------------------------------------------------
 
+
 class TestCheckRealRce:
     def _mock_session_factory(self, response_text: str = "", status: int = 200):
         session = MagicMock()
@@ -134,8 +146,9 @@ class TestCheckRealRce:
         from spring2shell.core.verifier import check_real_rce
 
         session = self._mock_session_factory("some irrelevant response")
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}):
             result = check_real_rce("http://t.example", "http://t.example/api")
         assert result is False
 
@@ -143,12 +156,12 @@ class TestCheckRealRce:
         from spring2shell.core.verifier import check_real_rce
 
         # Return a response that contains whatever marker was sent
-        call_count = [0]
         captured_marker = [None]
 
         def post_side_effect(*args, **kwargs):
             data = kwargs.get("data", "")
             import re
+
             match = re.search(r"(RCE_TEST_\d+)", data)
             if match:
                 captured_marker[0] = match.group(1)
@@ -159,8 +172,12 @@ class TestCheckRealRce:
         session.post.side_effect = post_side_effect
         session.get.return_value = _make_response("")
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={"Content-Type": "application/json"}):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch(
+            "spring2shell.core.verifier.get_random_headers",
+            return_value={"Content-Type": "application/json"},
+        ):
             result = check_real_rce("http://t.example", "http://t.example/api", method="POST")
         assert result is True
 
@@ -171,8 +188,9 @@ class TestCheckRealRce:
         session.get.return_value = _make_response("nothing")
         session.post.return_value = _make_response("nothing")
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}):
             result = check_real_rce("http://t.example", "http://t.example/api", method="GET")
         # GET requests should have been made
         assert session.get.called
@@ -183,6 +201,7 @@ class TestCheckRealRce:
 # blind_rce_test
 # ---------------------------------------------------------------------------
 
+
 class TestBlindRceTest:
     def test_returns_false_when_no_time_delay(self) -> None:
         from spring2shell.core.verifier import blind_rce_test
@@ -191,15 +210,18 @@ class TestBlindRceTest:
         session.post.return_value = _make_response("normal response")
         session.get.return_value = _make_response("normal response")
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}), patch(
+            "time.sleep"
+        ):
             result = blind_rce_test("http://t.example", "http://t.example/api")
         assert result is False
 
     def test_returns_true_on_timeout(self) -> None:
-        from spring2shell.core.verifier import blind_rce_test
         import requests as req
+
+        from spring2shell.core.verifier import blind_rce_test
 
         call_count = [0]
 
@@ -213,9 +235,11 @@ class TestBlindRceTest:
         session = MagicMock()
         session.post.side_effect = post_side_effect
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}), patch(
+            "time.sleep"
+        ):
             result = blind_rce_test("http://t.example", "http://t.example/api")
         assert result is True
 
@@ -225,8 +249,10 @@ class TestBlindRceTest:
         session = MagicMock()
         session.post.side_effect = ConnectionError("refused")
 
-        with patch("spring2shell.core.verifier.create_stealth_session", return_value=session), \
-             patch("spring2shell.core.verifier.get_random_headers", return_value={}), \
-             patch("time.sleep"):
+        with patch(
+            "spring2shell.core.verifier.create_stealth_session", return_value=session
+        ), patch("spring2shell.core.verifier.get_random_headers", return_value={}), patch(
+            "time.sleep"
+        ):
             result = blind_rce_test("http://t.example", "http://t.example/api")
         assert isinstance(result, bool)

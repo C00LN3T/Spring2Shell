@@ -48,6 +48,7 @@ def set_log_level(level: str) -> None:
 # Core helpers
 # ---------------------------------------------------------------------------
 
+
 def classify_exception(exc: Exception) -> str:
     """Map an exception to a canonical ERROR_TAXONOMY code."""
     msg = str(exc).lower()
@@ -65,6 +66,7 @@ def classify_exception(exc: Exception) -> str:
         return ERROR_TAXONOMY["http"]
     try:
         import json
+
         if isinstance(exc, json.JSONDecodeError):
             return ERROR_TAXONOMY["json"]
     except ImportError:

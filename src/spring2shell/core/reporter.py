@@ -18,10 +18,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Finding constructor
 # ---------------------------------------------------------------------------
+
 
 def build_finding(
     url: str,
@@ -86,6 +86,7 @@ def build_finding(
 # Strictness evaluator (for legacy findings from check_react4shell)
 # ---------------------------------------------------------------------------
 
+
 def evaluate_finding_strictness(finding: dict[str, Any]) -> dict[str, str]:
     """Normalise a legacy finding dict to a {status, confidence, reason_code} record.
 
@@ -131,6 +132,7 @@ def evaluate_finding_strictness(finding: dict[str, Any]) -> dict[str, str]:
 # SIEM schema report
 # ---------------------------------------------------------------------------
 
+
 def build_siem_schema_report(
     results: list[dict[str, Any]],
     scan_mode: str = "active",
@@ -148,31 +150,34 @@ def build_siem_schema_report(
     findings = []
     for r in results:
         meta = evaluate_finding_strictness(r)
-        findings.append({
-            "target":       r.get("url"),
-            "endpoint":     r.get("endpoint"),
-            "timestamp":    r.get("timestamp"),
-            "status":       meta["status"],
-            "confidence":   meta["confidence"],
-            "reason_code":  meta["reason_code"],
-            "evidence":     r.get("evidence"),
-            "status_code":  r.get("status_code"),
-            "method":       r.get("method"),
-            "cve":          r.get("cve"),
-            "raw":          r,
-        })
+        findings.append(
+            {
+                "target": r.get("url"),
+                "endpoint": r.get("endpoint"),
+                "timestamp": r.get("timestamp"),
+                "status": meta["status"],
+                "confidence": meta["confidence"],
+                "reason_code": meta["reason_code"],
+                "evidence": r.get("evidence"),
+                "status_code": r.get("status_code"),
+                "method": r.get("method"),
+                "cve": r.get("cve"),
+                "raw": r,
+            }
+        )
     return {
         "schema_version": "1.0",
-        "schema_type":    "react2shell_siem_report",
-        "scan_mode":      scan_mode,
-        "generated_at":   datetime.now(tz=timezone.utc).isoformat(),
-        "findings":       findings,
+        "schema_type": "react2shell_siem_report",
+        "scan_mode": scan_mode,
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+        "findings": findings,
     }
 
 
 # ---------------------------------------------------------------------------
 # Writers
 # ---------------------------------------------------------------------------
+
 
 def write_report(
     findings: list[dict[str, Any]],
@@ -190,10 +195,10 @@ def write_report(
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     report = {
-        "generated_at":   datetime.now(tz=timezone.utc).isoformat(),
+        "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         "total_findings": len(findings),
-        "findings":       findings,
-        "siem":           build_siem_schema_report(findings),
+        "findings": findings,
+        "siem": build_siem_schema_report(findings),
     }
     path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
     return path
@@ -214,8 +219,10 @@ def write_txt_report(
     """
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    confirmed  = [f for f in findings if f.get("status") in ("confirmed",  "Confirmed")]
-    unverified = [f for f in findings if f.get("status") in ("unverified", "Unverified", "Potential")]
+    confirmed = [f for f in findings if f.get("status") in ("confirmed", "Confirmed")]
+    unverified = [
+        f for f in findings if f.get("status") in ("unverified", "Unverified", "Potential")
+    ]
 
     lines = [
         "=" * 70,
@@ -242,7 +249,9 @@ def write_txt_report(
                 f"   Evidence: {f.get('evidence', '')}\n"
             )
     lines += [
-        "", "=" * 70, "SCAN STATISTICS:",
+        "",
+        "=" * 70,
+        "SCAN STATISTICS:",
         f"  Total findings:           {len(findings)}",
         f"  Confirmed vulnerabilities: {len(confirmed)}",
         f"  Unverified findings:       {len(unverified)}",
@@ -267,7 +276,7 @@ def write_dual_report(
     """
     prefix = Path(output_prefix)
     json_path = write_report(findings, prefix.with_suffix(".json"))
-    txt_path  = write_txt_report(findings, prefix.with_suffix(".txt"))
+    txt_path = write_txt_report(findings, prefix.with_suffix(".txt"))
     return json_path, txt_path
 
 
@@ -300,24 +309,28 @@ def write_formatted_reports(
             written["txt"] = write_txt_report(findings, prefix.with_suffix(".txt"))
         elif fmt == "html":
             from spring2shell.core.html_reporter import generate_html_report
+
             written["html"] = generate_html_report(findings, prefix.with_suffix(".html"))
         elif fmt == "sarif":
             from spring2shell.utils.sarif_export import export_to_sarif
+
             written["sarif"] = export_to_sarif(findings, prefix.with_suffix(".sarif.json"))
 
     return written
-
 
 
 # ---------------------------------------------------------------------------
 # Console summary
 # ---------------------------------------------------------------------------
 
+
 def print_summary(findings: list[dict[str, Any]]) -> None:
     """Print a human-readable summary of findings to stdout."""
-    confirmed  = [f for f in findings if f.get("status") in ("confirmed",  "Confirmed")]
-    unverified = [f for f in findings if f.get("status") in ("unverified", "Unverified", "Potential")]
-    not_vuln   = [f for f in findings if f.get("status") == "not_vulnerable"]
+    confirmed = [f for f in findings if f.get("status") in ("confirmed", "Confirmed")]
+    unverified = [
+        f for f in findings if f.get("status") in ("unverified", "Unverified", "Potential")
+    ]
+    not_vuln = [f for f in findings if f.get("status") == "not_vulnerable"]
 
     print(f"\n{'=' * 60}")
     print("  SCAN SUMMARY")

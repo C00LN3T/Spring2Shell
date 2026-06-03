@@ -28,7 +28,7 @@ def profile_waf(target_url: str) -> dict[str, Any]:
     log_event(logging.INFO, "Starting WAF diagnostic profiling", target=target_url)
     session = create_stealth_session()
     headers = get_random_headers()
-    
+
     # Establish baseline GET response status
     baseline_status = 200
     try:
@@ -36,7 +36,7 @@ def profile_waf(target_url: str) -> dict[str, Any]:
         baseline_status = baseline_resp.status_code
     except Exception as exc:
         log_event(logging.WARNING, f"Baseline request failed: {exc}. Using 200 as baseline.")
-        
+
     blocked_methods: dict[str, Any] = {}
     blocked_chars_query: dict[str, Any] = {}
     blocked_chars_json: dict[str, Any] = {}
@@ -56,18 +56,18 @@ def profile_waf(target_url: str) -> dict[str, Any]:
             blocked_methods[m] = {
                 "blocked": blocked,
                 "status_code": status,
-                "reason": "HTTP Error status" if blocked else "Allowed/Normal response"
+                "reason": "HTTP Error status" if blocked else "Allowed/Normal response",
             }
         except Exception as exc:
             blocked_methods[m] = {
                 "blocked": True,
                 "status_code": None,
-                "reason": f"Connection error/timeout: {exc}"
+                "reason": f"Connection error/timeout: {exc}",
             }
 
     # Test diagnostic characters
-    test_chars = ["{", "}", "[", "]", "(", ")", "'", "\"", "$", "<", ">", ";", "|", "`", "\\"]
-    
+    test_chars = ["{", "}", "[", "]", "(", ")", "'", '"', "$", "<", ">", ";", "|", "`", "\\"]
+
     # Character in query param
     for char in test_chars:
         # Benign test query: ?test=char
@@ -79,13 +79,13 @@ def profile_waf(target_url: str) -> dict[str, Any]:
             blocked_chars_query[char] = {
                 "blocked": blocked,
                 "status_code": status,
-                "reason": "HTTP Block status" if blocked else "Allowed"
+                "reason": "HTTP Block status" if blocked else "Allowed",
             }
         except Exception as exc:
             blocked_chars_query[char] = {
                 "blocked": True,
                 "status_code": None,
-                "reason": f"Connection drop: {exc}"
+                "reason": f"Connection drop: {exc}",
             }
 
     # Character in JSON body
@@ -101,13 +101,13 @@ def profile_waf(target_url: str) -> dict[str, Any]:
             blocked_chars_json[char] = {
                 "blocked": blocked,
                 "status_code": status,
-                "reason": "HTTP Block status" if blocked else "Allowed"
+                "reason": "HTTP Block status" if blocked else "Allowed",
             }
         except Exception as exc:
             blocked_chars_json[char] = {
                 "blocked": True,
                 "status_code": None,
-                "reason": f"Connection drop: {exc}"
+                "reason": f"Connection drop: {exc}",
             }
 
     report = {
@@ -115,9 +115,9 @@ def profile_waf(target_url: str) -> dict[str, Any]:
         "baseline_status": baseline_status,
         "methods": blocked_methods,
         "characters_query": blocked_chars_query,
-        "characters_json": blocked_chars_json
+        "characters_json": blocked_chars_json,
     }
-    
+
     log_event(logging.INFO, "WAF diagnostic profiling complete", target=target_url)
     return report
 
@@ -128,7 +128,7 @@ def print_waf_profile(report: dict[str, Any]) -> None:
     print(f" WAF DIAGNOSTIC PROFILE REPORT FOR: {report['target']}")
     print(f" Baseline GET Status Code: {report['baseline_status']}")
     print("=" * 60)
-    
+
     print("\n[+] HTTP Methods Status:")
     for method, res in report["methods"].items():
         block_str = "❌ BLOCKED" if res["blocked"] else "✅ ALLOWED"

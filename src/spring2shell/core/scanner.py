@@ -5,13 +5,12 @@ Core scanner — bulk scan and CVE mass-scan modes for spring2shell.
 from __future__ import annotations
 
 import concurrent.futures
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 from spring2shell.core.exploiter import direct_exploit
-from spring2shell.core.reporter import build_finding, print_summary, write_report
+from spring2shell.core.reporter import print_summary, write_report
 from spring2shell.utils.logging import log_event
 from spring2shell.utils.signals import is_interrupted
 
@@ -45,7 +44,9 @@ def bulk_scan(
     all_targets = _load_targets(targets_file)
     targets = checkpoint.get_remaining(all_targets) if checkpoint else all_targets
 
-    log_event(logging.INFO, "bulk-scan start", targets=len(targets), mode="async" if use_async else "sync")
+    log_event(
+        logging.INFO, "bulk-scan start", targets=len(targets), mode="async" if use_async else "sync"
+    )
     all_findings: list[dict[str, Any]] = list(checkpoint.get_all_results() if checkpoint else [])
 
     try:
@@ -55,6 +56,7 @@ def bulk_scan(
 
     if use_async:
         import asyncio
+
         from spring2shell.core.exploiter import async_direct_exploit
         from spring2shell.utils.async_network import create_async_session
 
@@ -135,14 +137,20 @@ def cve_mass_scan(
         use_async:     Use high-concurrency async engine.
         max_workers:   Concurrency limit for async mode.
     """
-    from spring2shell.core.exploiter import cve_specific_scan, async_cve_specific_scan
+    from spring2shell.core.exploiter import async_cve_specific_scan, cve_specific_scan
 
     targets = _load_targets(targets_file)
-    log_event(logging.INFO, "cve-mass-scan start", targets=len(targets), mode="async" if use_async else "sync")
+    log_event(
+        logging.INFO,
+        "cve-mass-scan start",
+        targets=len(targets),
+        mode="async" if use_async else "sync",
+    )
     all_findings: list[dict[str, Any]] = []
 
     if use_async:
         import asyncio
+
         from spring2shell.utils.async_network import create_async_session
 
         async def _scan_target(sem: asyncio.Semaphore, target: str, session: Any) -> None:
@@ -179,4 +187,3 @@ def cve_mass_scan(
         write_report(all_findings, output)
         print(f"[+] CVE scan results saved: {output}")
     log_event(logging.INFO, "cve-mass-scan complete", total=len(all_findings))
-

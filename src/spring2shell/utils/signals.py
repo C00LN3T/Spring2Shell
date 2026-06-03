@@ -18,7 +18,7 @@ def is_interrupted() -> bool:
     return _interrupted
 
 
-def _handler(sig: int, frame: object) -> None:  # noqa: ARG001
+def _handler(sig: int, frame: object) -> None:
     global _interrupted
     _interrupted = True
     print("\n[!] Received interrupt signal. Stopping scan…")

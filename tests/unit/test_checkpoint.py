@@ -1,10 +1,8 @@
 """Unit tests for checkpoint.py — scan resume support."""
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from spring2shell.core.checkpoint import Checkpoint
 
@@ -14,7 +12,10 @@ class TestCheckpoint:
         """A fresh checkpoint should have no scanned targets."""
         cp = Checkpoint(str(tmp_path / "scan"))
         assert not cp.is_resume
-        assert cp.get_remaining(["http://a.com", "http://b.com"]) == ["http://a.com", "http://b.com"]
+        assert cp.get_remaining(["http://a.com", "http://b.com"]) == [
+            "http://a.com",
+            "http://b.com",
+        ]
 
     def test_save_progress(self, tmp_path):
         """Saving progress should persist to disk."""

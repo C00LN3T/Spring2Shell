@@ -56,6 +56,7 @@ TIMEOUT_PROFILES: dict[str, float] = {
 # Public accessors
 # ---------------------------------------------------------------------------
 
+
 def ssl_verify() -> bool:
     """Return the current TLS verification setting."""
     return _SSL_VERIFY
@@ -69,6 +70,7 @@ def is_verbose_errors() -> bool:
 # ---------------------------------------------------------------------------
 # Runtime configuration
 # ---------------------------------------------------------------------------
+
 
 def configure_runtime(insecure: bool = False, verbose_errors: bool = False) -> None:
     """Apply global runtime security settings.
@@ -88,6 +90,7 @@ def configure_runtime(insecure: bool = False, verbose_errors: bool = False) -> N
         log_event(logging.WARNING, "TLS certificate verification is disabled (--insecure)")
     else:
         import warnings
+
         warnings.filterwarnings("default", category=urllib3.exceptions.InsecureRequestWarning)
 
 

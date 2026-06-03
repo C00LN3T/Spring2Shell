@@ -5,13 +5,14 @@ Plugin for CVE-2021-44228: Log4Shell.
 from __future__ import annotations
 
 import random
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
 
-from spring2shell.core.reporter import build_finding
 from spring2shell.evasion.waf_engine import waf_engine
 from spring2shell.plugins.base import BasePlugin
 from spring2shell.utils.auth import audit_log, rate_limit_acquire
+
+if TYPE_CHECKING:
+    import requests
 
 
 class CVE_2021_44228_Plugin(BasePlugin):
@@ -53,7 +54,9 @@ class CVE_2021_44228_Plugin(BasePlugin):
 
                 try:
                     rate_limit_acquire()
-                    resp = session.post(endpoint, data=payload_val, headers=final_headers, timeout=5)
+                    resp = session.post(
+                        endpoint, data=payload_val, headers=final_headers, timeout=5
+                    )
                     audit_log("POST", endpoint, resp.status_code, payload_val[:100], "cve_scan")
                 except Exception:
                     continue

