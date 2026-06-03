@@ -84,3 +84,6 @@ python cracker.py log-audit https://target.example -o log_audit.json
 - TLS certificate verification is enabled by default. Use `--insecure` only in controlled environments when needed.
 - Use `--verbose-errors` if you need detailed diagnostics for swallowed network exceptions during discovery/audit phases.
 - Commands are for educational and authorized testing purposes. Ensure you have permission before scanning or exploiting any target.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
