@@ -2,13 +2,13 @@
 
 Current payload coverage in `data/payloads/cve_payloads.json`.
 
-| CVE | Vulnerability | Affected Software | Payload Variants |
-|---|---|---|---|
-| **CVE-2025-55182** | SpEL Injection — RCE via GraphQL/Spring endpoints | Spring Framework | 8 |
-| **CVE-2025-66478** | GraphQL-specific SpEL injection | Spring + GraphQL | 3 |
-| **CVE-2022-22965** | Spring4Shell — ClassLoader data binding RCE | Spring Framework < 5.3.18, < 5.2.20 | 2 |
-| **CVE-2021-44228** | Log4Shell — JNDI injection | Apache Log4j 2.0-beta9 to 2.14.1 | 6 |
-| **CVE-2022-42889** | Text4Shell — Commons Text interpolation RCE | Apache Commons Text < 1.10.0 | 3 |
+| CVE | Vulnerability | Affected Software | Type | Severity | Payload Variants |
+|---|---|---|---|---|---|
+| **[CVE-2025-55182](https://nvd.nist.gov/vuln/detail/CVE-2025-55182)** | SpEL Injection — RCE via GraphQL/Spring endpoints | Spring Framework | 🔴 RCE | 💥 Critical | `8` |
+| **[CVE-2025-66478](https://nvd.nist.gov/vuln/detail/CVE-2025-66478)** | GraphQL-specific SpEL injection | Spring + GraphQL | 🔴 RCE | 💥 Critical | `3` |
+| **[CVE-2022-22965](https://nvd.nist.gov/vuln/detail/CVE-2022-22965)** | Spring4Shell — ClassLoader data binding RCE | Spring Framework < 5.3.18, < 5.2.20 | 🔴 RCE | 💥 Critical | `2` |
+| **[CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)** | Log4Shell — JNDI injection | Apache Log4j 2.0-beta9 to 2.14.1 | 🔴 RCE | 💥 Critical | `6` |
+| **[CVE-2022-42889](https://nvd.nist.gov/vuln/detail/CVE-2022-42889)** | Text4Shell — Commons Text interpolation RCE | Apache Commons Text < 1.10.0 | 🔴 RCE | 💥 Critical | `3` |
 
 ## Adding Coverage for a New CVE
 

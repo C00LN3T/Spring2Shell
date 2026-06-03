@@ -90,19 +90,19 @@ graph TD
 
 `Spring2Shell` contains an externalized, up-to-date payload database (`data/payloads/cve_payloads.json`) targeting the following vectors:
 
-| CVE ID | Vulnerability / Description | Affected Technology | Type | Variants |
-| :--- | :--- | :--- | :--- | :---: |
-| **CVE-2025-55182** | SpEL Injection (GraphQL/Spring Endpoints) | Spring Framework | Remote Code Execution | 8 |
-| **CVE-2025-66478** | GraphQL-specific SpEL injection vectors | Spring + GraphQL | Remote Code Execution | 3 |
-| **CVE-2022-22965** | Spring4Shell (ClassLoader Data Binding RCE) | Spring Framework | Remote Code Execution | 2 |
-| **CVE-2021-44228** | Log4Shell (JNDI LDAP/RMI Injection) | Apache Log4j 2 | Remote Code Execution | 6 |
-| **CVE-2022-42889** | Text4Shell (Commons Text Interpolation) | Apache Commons Text | Remote Code Execution | 3 |
-| **CVE-2023-46604** | ActiveMQ OpenWire Deserialization RCE | Apache ActiveMQ | Remote Code Execution | 4 |
-| **CVE-2024-22243** | Spring Web SSRF via UriComponentsBuilder | Spring Framework | SSRF | 7 |
-| **CVE-2024-38816** | WebFlux Directory Traversal (Linux pathing) | Spring Framework | Path Traversal | 7 |
-| **CVE-2024-4577** | PHP CGI Argument Injection (Windows/XAMPP) | PHP CGI | Remote Code Execution | 4 |
-| **CVE-2023-34104** | fast-xml-parser ReDoS / Prototype Pollution | fast-xml-parser | ReDoS / Pollution | 3 |
-| **CVE-2024-21626** | runc Container Escape (/proc/self/fd leak) | runc | Container Escape | 3 |
+| CVE ID | Vulnerability / Description | Affected Technology | Type | Severity | Variants |
+| :--- | :--- | :--- | :--- | :---: | :---: |
+| **[CVE-2025-55182](https://nvd.nist.gov/vuln/detail/CVE-2025-55182)** | SpEL Injection (GraphQL/Spring Endpoints) | Spring Framework | 🔴 RCE | 💥 Critical | `8` |
+| **[CVE-2025-66478](https://nvd.nist.gov/vuln/detail/CVE-2025-66478)** | GraphQL-specific SpEL injection vectors | Spring + GraphQL | 🔴 RCE | 💥 Critical | `3` |
+| **[CVE-2022-22965](https://nvd.nist.gov/vuln/detail/CVE-2022-22965)** | Spring4Shell (ClassLoader Data Binding RCE) | Spring Framework | 🔴 RCE | 💥 Critical | `2` |
+| **[CVE-2021-44228](https://nvd.nist.gov/vuln/detail/CVE-2021-44228)** | Log4Shell (JNDI LDAP/RMI Injection) | Apache Log4j 2 | 🔴 RCE | 💥 Critical | `6` |
+| **[CVE-2022-42889](https://nvd.nist.gov/vuln/detail/CVE-2022-42889)** | Text4Shell (Commons Text Interpolation) | Apache Commons Text | 🔴 RCE | 💥 Critical | `3` |
+| **[CVE-2023-46604](https://nvd.nist.gov/vuln/detail/CVE-2023-46604)** | ActiveMQ OpenWire Deserialization RCE | Apache ActiveMQ | 🔴 RCE | 💥 Critical | `4` |
+| **[CVE-2024-22243](https://nvd.nist.gov/vuln/detail/CVE-2024-22243)** | Spring Web SSRF via UriComponentsBuilder | Spring Framework | 🟡 SSRF | ⚠️ High | `7` |
+| **[CVE-2024-38816](https://nvd.nist.gov/vuln/detail/CVE-2024-38816)** | WebFlux Directory Traversal (Linux pathing) | Spring Framework | 🟠 Path Traversal | ⚠️ High | `7` |
+| **[CVE-2024-4577](https://nvd.nist.gov/vuln/detail/CVE-2024-4577)** | PHP CGI Argument Injection (Windows/XAMPP) | PHP CGI | 🔴 RCE | 💥 Critical | `4` |
+| **[CVE-2023-34104](https://nvd.nist.gov/vuln/detail/CVE-2023-34104)** | fast-xml-parser ReDoS / Prototype Pollution | fast-xml-parser | ⚡ ReDoS/Pollution | ⚠️ High | `3` |
+| **[CVE-2024-21626](https://nvd.nist.gov/vuln/detail/CVE-2024-21626)** | runc Container Escape (/proc/self/fd leak) | runc | 🟣 Escape | ⚠️ High | `3` |
 
 ---
 
