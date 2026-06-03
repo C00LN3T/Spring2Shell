@@ -54,7 +54,7 @@ _TECH_MARKERS = [
 ]
 
 # Additional header-based markers: header name → tech tag
-_HEADER_MARKERS: dict[str, str] = {
+_HEADER_MARKERS: dict[str, str | None] = {
     "x-powered-by": None,  # inspect value
     "x-nextjs-page": "next.js",
     "x-amz-cf-id": "cloudfront",

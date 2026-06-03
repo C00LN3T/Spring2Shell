@@ -29,7 +29,7 @@ def bulk_scan(
     targets_file: str,
     output_prefix: str,
     max_workers: int = 5,
-    checkpoint=None,
+    checkpoint: Any = None,
     use_async: bool = False,
 ) -> None:
     """Scan all URLs in *targets_file* and write per-target JSON reports.
@@ -52,7 +52,7 @@ def bulk_scan(
     try:
         from spring2shell.utils.auth import send_webhook
     except ImportError:
-        send_webhook = lambda f: None  # noqa: E731
+        send_webhook = lambda finding: None  # noqa: E731
 
     if use_async:
         import asyncio
@@ -78,7 +78,7 @@ def bulk_scan(
                 except Exception as exc:
                     log_event(logging.WARNING, f"scan error for {target}: {exc}")
 
-        async def _main():
+        async def _main() -> None:
             sem = asyncio.Semaphore(max_workers)
             session = create_async_session()
             try:
@@ -164,7 +164,7 @@ def cve_mass_scan(
                 except Exception as exc:
                     log_event(logging.WARNING, f"cve-scan error for {target}: {exc}")
 
-        async def _main():
+        async def _main() -> None:
             sem = asyncio.Semaphore(max_workers)
             session = create_async_session()
             try:

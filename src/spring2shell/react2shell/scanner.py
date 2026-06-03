@@ -16,7 +16,7 @@ import logging
 import re
 import time
 import urllib.parse
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from spring2shell.core.reporter import build_finding
 from spring2shell.core.session import create_stealth_session
@@ -24,6 +24,9 @@ from spring2shell.evasion.headers import get_random_headers
 from spring2shell.utils.auth import apply_auth, audit_log, rate_limit_acquire
 from spring2shell.utils.logging import log_event, log_swallowed_exception
 from spring2shell.utils.signals import is_interrupted
+
+if TYPE_CHECKING:
+    import requests
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -98,7 +101,9 @@ def _extract_next_data_routes(html: str, base_url: str) -> list[str]:
         return []
 
 
-def _detect_graphql_introspection(session, base_url: str, endpoint: str, headers: dict) -> bool:
+def _detect_graphql_introspection(
+    session: requests.Session, base_url: str, endpoint: str, headers: dict[str, str]
+) -> bool:
     """Return True if GraphQL introspection is enabled (schema leaked)."""
     url = urllib.parse.urljoin(base_url.rstrip("/") + "/", endpoint.lstrip("/"))
     try:
@@ -117,7 +122,7 @@ def _detect_graphql_introspection(session, base_url: str, endpoint: str, headers
 
 
 def _detect_server_actions(
-    session, base_url: str, endpoints: list[str], headers: dict
+    session: requests.Session, base_url: str, endpoints: list[str], headers: dict[str, str]
 ) -> list[str]:
     """Detect Next.js Server Action endpoints via Next-Action response header."""
     action_endpoints: list[str] = []

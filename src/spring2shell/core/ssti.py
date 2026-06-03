@@ -30,9 +30,12 @@ def _load_ssti_payloads() -> dict[str, Any]:
     path = Path(__file__).parents[3] / "data" / "payloads" / "ssti_payloads.json"
     try:
         with path.open() as fh:
-            return json.load(fh)
+            data = json.load(fh)
+            if isinstance(data, dict):
+                return data
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        pass
+    return {}
 
 
 # ---------------------------------------------------------------------------

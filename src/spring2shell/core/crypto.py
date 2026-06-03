@@ -29,7 +29,7 @@ def _load_or_generate_key() -> bytes:
         raise RuntimeError(
             "The 'cryptography' package is required for report encryption. "
             "Install it with: pip install cryptography"
-        )
+        ) from None
 
     _KEY_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 
@@ -62,7 +62,7 @@ def encrypt_report(report_path: str | Path, *, remove_original: bool = False) ->
         FileNotFoundError: If *report_path* does not exist.
         RuntimeError:      If the ``cryptography`` package is not installed.
     """
-    from cryptography.fernet import Fernet  # type: ignore
+    from cryptography.fernet import Fernet
 
     src = Path(report_path)
     if not src.exists():
@@ -98,7 +98,7 @@ def decrypt_report(encrypted_path: str | Path, *, output_path: str | Path | None
         FileNotFoundError: If *encrypted_path* does not exist.
         RuntimeError:      If the ``cryptography`` package is not installed.
     """
-    from cryptography.fernet import Fernet, InvalidToken  # type: ignore
+    from cryptography.fernet import Fernet, InvalidToken
 
     src = Path(encrypted_path)
     if not src.exists():

@@ -321,3 +321,93 @@ class TestSafeFullAudit:
             "strict_summary",
         ):
             assert key in result
+
+
+# ---------------------------------------------------------------------------
+# run_safe_audit
+# ---------------------------------------------------------------------------
+
+
+class TestRunSafeAudit:
+    def test_aggregates_findings_properly(self) -> None:
+        from spring2shell.audit.safe_audit import run_safe_audit
+
+        mock_encoding = [
+            {
+                "endpoint": "http://t.example/api",
+                "marker": "SAFE_AUDIT_12345",
+                "decoding_observations": [
+                    {
+                        "method": "POST",
+                        "variant": "url",
+                        "reflected_plain": True,
+                        "reflected_encoded": False,
+                    }
+                ],
+                "status": [],
+            }
+        ]
+        mock_log_findings = [
+            {
+                "url": "http://t.example",
+                "endpoint": "http://t.example",
+                "status": "unverified",
+                "confidence": "medium",
+                "reason": "LOG4J_INDICATOR",
+                "evidence": "Log4j version detected",
+                "method": "GET",
+            }
+        ]
+        mock_deps = {
+            "target": "http://t.example",
+            "leaks": [
+                {
+                    "path": "/actuator/env",
+                    "status_code": 200,
+                    "indicators": ["spring-boot"],
+                }
+            ],
+        }
+        mock_misconfig = {
+            "target": "http://t.example",
+            "issues": [
+                {
+                    "type": "missing_security_headers",
+                    "missing": ["X-Frame-Options"],
+                },
+                {
+                    "type": "version_disclosure",
+                    "header": "X-Powered-By",
+                    "value": "Express",
+                },
+                {
+                    "type": "exposed_management_endpoint",
+                    "path": "/actuator",
+                    "status_code": 200,
+                },
+            ],
+        }
+
+        with patch(
+            "spring2shell.audit.safe_audit.safe_encoding_audit", return_value=mock_encoding
+        ), patch(
+            "spring2shell.audit.log_audit.run_log_audit", return_value=mock_log_findings
+        ), patch(
+            "spring2shell.audit.safe_audit.safe_dependency_audit", return_value=mock_deps
+        ), patch(
+            "spring2shell.audit.safe_audit.safe_misconfig_audit", return_value=mock_misconfig
+        ):
+            findings = run_safe_audit("http://t.example")
+
+        assert isinstance(findings, list)
+        # 1 from encoding + 1 from log4j + 1 from dependency + 3 from misconfig = 6 findings
+        assert len(findings) == 6
+
+        reasons = [f["reason"] for f in findings]
+        assert "DECODING_OBSERVATION" in reasons
+        assert "LOG4J_INDICATOR" in reasons
+        assert "DEPENDENCY_LEAKAGE" in reasons
+        assert "MISSING_SECURITY_HEADERS" in reasons
+        assert "VERSION_DISCLOSURE" in reasons
+        assert "EXPOSED_MANAGEMENT_ENDPOINT" in reasons
+

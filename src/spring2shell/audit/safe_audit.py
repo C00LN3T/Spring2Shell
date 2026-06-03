@@ -380,3 +380,131 @@ def safe_full_audit(target_url: str) -> dict[str, Any]:
         "misconfiguration": misconfig,
         "strict_summary": strict_summary,
     }
+
+
+def run_safe_audit(target_url: str) -> list[dict[str, Any]]:
+    """Run all four passive audits and return a list of standard findings.
+
+    Args:
+        target_url: Base URL to audit.
+
+    Returns:
+        List of findings.
+    """
+    from spring2shell.audit.log_audit import run_log_audit
+    from spring2shell.core.reporter import build_finding
+
+    findings: list[dict[str, Any]] = []
+
+    # 1. Encoding audit
+    try:
+        encoding_results = safe_encoding_audit(target_url)
+        for res in encoding_results:
+            endpoint = res.get("endpoint", target_url)
+            observations = res.get("decoding_observations", [])
+            for obs in observations:
+                method = obs.get("method", "POST")
+                variant = obs.get("variant", "plain")
+                reflected_plain = obs.get("reflected_plain", False)
+                reflected_encoded = obs.get("reflected_encoded", False)
+                evidence = f"Marker variant '{variant}' reflected in response (plain={reflected_plain}, encoded={reflected_encoded})"
+                finding = build_finding(
+                    url=target_url,
+                    endpoint=endpoint,
+                    status="unverified",
+                    confidence="medium",
+                    reason="DECODING_OBSERVATION",
+                    evidence=evidence,
+                    method=method,
+                    extra={"variant": variant, "reflected_plain": reflected_plain, "reflected_encoded": reflected_encoded}
+                )
+                findings.append(finding)
+    except Exception as exc:
+        log_swallowed_exception("run_safe_audit encoding", exc)
+
+    # 2. Log4j audit
+    try:
+        log4j_findings = run_log_audit(target_url)
+        findings.extend(log4j_findings)
+    except Exception as exc:
+        log_swallowed_exception("run_safe_audit log4j", exc)
+
+    # 3. Dependency audit
+    try:
+        deps = safe_dependency_audit(target_url)
+        for leak in deps.get("leaks", []):
+            path = leak.get("path", "")
+            endpoint = urllib.parse.urljoin(target_url.rstrip("/") + "/", path.lstrip("/"))
+            status_code = leak.get("status_code")
+            indicators = leak.get("indicators", [])
+            evidence = f"Dependency leakage detected via indicators: {', '.join(indicators)}"
+            finding = build_finding(
+                url=target_url,
+                endpoint=endpoint,
+                status="unverified",
+                confidence="medium",
+                reason="DEPENDENCY_LEAKAGE",
+                evidence=evidence,
+                method="GET",
+                status_code=status_code,
+                extra={"indicators": indicators}
+            )
+            findings.append(finding)
+    except Exception as exc:
+        log_swallowed_exception("run_safe_audit dependency", exc)
+
+    # 4. Misconfiguration audit
+    try:
+        misconfig = safe_misconfig_audit(target_url)
+        for issue in misconfig.get("issues", []):
+            issue_type = issue.get("type")
+            if issue_type == "missing_security_headers":
+                missing = issue.get("missing", [])
+                evidence = f"Missing security headers: {', '.join(missing)}"
+                finding = build_finding(
+                    url=target_url,
+                    endpoint=target_url,
+                    status="unverified",
+                    confidence="low",
+                    reason="MISSING_SECURITY_HEADERS",
+                    evidence=evidence,
+                    method="GET",
+                    extra={"missing_headers": missing}
+                )
+                findings.append(finding)
+            elif issue_type == "version_disclosure":
+                header = issue.get("header", "")
+                value = issue.get("value", "")
+                evidence = f"Version disclosure via header '{header}': {value}"
+                finding = build_finding(
+                    url=target_url,
+                    endpoint=target_url,
+                    status="unverified",
+                    confidence="low",
+                    reason="VERSION_DISCLOSURE",
+                    evidence=evidence,
+                    method="GET",
+                    extra={"header": header, "value": value}
+                )
+                findings.append(finding)
+            elif issue_type == "exposed_management_endpoint":
+                path = issue.get("path", "")
+                endpoint = urllib.parse.urljoin(target_url.rstrip("/") + "/", path.lstrip("/"))
+                status_code = issue.get("status_code", 200)
+                evidence = f"Exposed management endpoint at {path}"
+                finding = build_finding(
+                    url=target_url,
+                    endpoint=endpoint,
+                    status="unverified",
+                    confidence="medium",
+                    reason="EXPOSED_MANAGEMENT_ENDPOINT",
+                    evidence=evidence,
+                    method="GET",
+                    status_code=status_code
+                )
+                findings.append(finding)
+    except Exception as exc:
+        log_swallowed_exception("run_safe_audit misconfig", exc)
+
+    return findings
+

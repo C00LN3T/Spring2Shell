@@ -7,7 +7,6 @@ from __future__ import annotations
 import importlib
 import pkgutil
 import sys
-from typing import Type
 
 from spring2shell.plugins.base import BasePlugin
 

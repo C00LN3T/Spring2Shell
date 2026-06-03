@@ -32,7 +32,11 @@ def load_waf_bypasses(data_root: str | Path | None = None) -> list[dict[str, Any
     try:
         with path.open() as fh:
             data = json.load(fh)
-        return data.get("bypasses", [])
+        if isinstance(data, dict):
+            bypasses = data.get("bypasses", [])
+            if isinstance(bypasses, list):
+                return bypasses
+        return []
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return []
 

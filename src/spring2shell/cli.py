@@ -345,7 +345,7 @@ def _interactive_menu() -> None:
             if targets_file and output_prefix:
                 from spring2shell.core.scanner import bulk_scan
 
-                bulk_scan(targets_file, output_prefix, threads=threads)
+                bulk_scan(targets_file, output_prefix, max_workers=threads)
             else:
                 print("[!] Targets file and output prefix required")
 
@@ -446,13 +446,13 @@ def _interactive_menu() -> None:
             if target:
                 from spring2shell.core.reporter import write_dual_report
 
-                results = safe_full_audit(target)
-                risk = results.get("strict_summary", {}).get("overall_risk", "unknown")
+                audit_results = safe_full_audit(target)
+                risk = audit_results.get("strict_summary", {}).get("overall_risk", "unknown")
                 print(f"[+] Overall risk: {risk.upper()}")
                 out = _input("Save report? Enter prefix (Enter = skip): ")
                 if out:
                     j, t = write_dual_report(
-                        results.get("log_findings", []) + results.get("encoding", []),
+                        audit_results.get("log_findings", []) + audit_results.get("encoding", []),
                         out,
                     )
                     print(f"[+] JSON: {j}  TXT: {t}")

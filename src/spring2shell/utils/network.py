@@ -101,7 +101,7 @@ def load_config(config_path: str | Path | None = None) -> dict[str, Any]:
     installed or the file does not exist.
     """
     try:
-        import yaml  # type: ignore[import]
+        import yaml
     except ImportError:
         return {}
 

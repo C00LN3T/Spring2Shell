@@ -47,12 +47,13 @@ class Checkpoint:
         if self._path.exists():
             try:
                 data = json.loads(self._path.read_text())
-                log_event(
-                    logging.INFO,
-                    f"Checkpoint loaded: {len(data.get('scanned', []))} targets already done",
-                    path=str(self._path),
-                )
-                return data
+                if isinstance(data, dict):
+                    log_event(
+                        logging.INFO,
+                        f"Checkpoint loaded: {len(data.get('scanned', []))} targets already done",
+                        path=str(self._path),
+                    )
+                    return data
             except (json.JSONDecodeError, OSError) as exc:
                 log_event(logging.WARNING, f"Could not read checkpoint file: {exc}")
         return {

@@ -41,7 +41,7 @@ def create_async_session(profile: str = "default") -> aiohttp.ClientSession:
 
     # SSL configuration
     verify = ssl_verify()
-    connector = aiohttp.TCPConnector(ssl=None if verify else False)
+    connector = aiohttp.TCPConnector(ssl=verify)
 
     session = aiohttp.ClientSession(
         connector=connector,
